@@ -94,4 +94,32 @@ Then implement it and test it on small datasets derived from the samples I've pr
 
 Implement EFFICIENTLY. Use sub-agents as required.
 
+### Enhancements 1
+
+Append PLAN.md with the following under an `# Enhancements 1` section:
+
+- Resumable embedding cache. Keep it minimal - for example, if only .duckdb is needed and not the .parquet, that's fine. Or any other lightweight, elegant approach.
+- Audio embedding
+- Cluster naming by LLM using a lightweight model like `gemini-3.1-flash-lite-preview` or `gemini-3-flash-preview`, passing the top-N closest rows across all clusters as context and asking for a structured JSON output with the name for each cluster - characterizing the cluster well (not too broadly/narrowly), while also disambiguating clusters with similar themes.
+- A test text dataset with ~300 rows that can be used to test the application, along with instructions on how to run it with that dataset. I should just be able to type the command even without cloning the repo and it should generate an index.html with uvx cloning from GitHub and pulling the dataset from GitHub.
+
+Give me an easy way to verify your plan and assumptions before you start coding.
+Make a list of questions you have for me.
+Update `notes.md` under a `## How to review Enhancements 1` with a checklist of things to verify in the plan.
+
+---
+
+I agree with the plan & assumptions. Here are answers to your questions:
+
+1. I want the resumable cache to be on by default
+2. Store the cache in the current working directory, next to the output HTML. (Add it it .gitignore, along with index.html)
+3. Add an option for the user to include audio metadata but by default only embed the audio contents
+4. Expose cluster naming as a build flag from the start
+5. Prefer reasonably short names - disambiguating similar neighboring clusters is important, but short is equally important
+6. The ~300-row test dataset just needs to be representative and convenient
+
+Based on these, revise PLAN.md.
+
+Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you go (including prompts.md which I'm editing).
+
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->

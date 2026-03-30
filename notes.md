@@ -194,3 +194,46 @@ That gives you a fast way to validate the product shape on 3 or 4 representative
   - a text-only blog or papers CSV
   - an image-heavy CSV with local filenames
   - a mixed metadata CSV with text, images, year/category, and a timeline column
+
+## Enhancements 1 assumptions
+
+- The cache should stay intentionally small and local, preferably one `.duckdb` file.
+- The cache should be on by default and live next to the output HTML.
+- Reusing row-level embeddings is the main win; refitting downstream projections is acceptable in the first cache version.
+- Audio support should start with file/URL passthrough to Gemini, not a custom media-processing pipeline, with optional audio metadata columns when needed.
+- Cluster naming should be exposed as a build flag and remain separate from clustering so the core layout stays deterministic.
+- Cluster names should stay reasonably short while still disambiguating nearby clusters.
+- The first public smoke-test dataset for the GitHub-hosted `uvx --from ...` path should be text-only.
+- The public ~300-row test dataset only needs to be representative and convenient, not hand-curated.
+
+## How to review Enhancements 1
+
+- Verify that the resumable cache stays lightweight:
+  - ideally one `.duckdb`
+  - no extra cache formats unless they clearly add value
+- Verify that the cache should be on by default and written next to the output HTML.
+- Verify that row-level cache reuse is sufficient for the first pass, even if UMAP/clustering are recomputed afterward.
+- Verify that `--audio-columns` should mirror the ergonomics of the existing `--embedding-columns` and `--image-columns`.
+- Verify that optional `--audio-metadata-columns` is the right level of extra control for audio rows.
+- Verify that audio support should remain narrow:
+  - local files and HTTP(S) URLs
+  - no transcription pipeline
+  - no segmentation/chunking system in this tranche
+- Verify that cluster naming should be a separate post-clustering pass using a lightweight Gemini model.
+- Verify that cluster naming should be exposed as an explicit build flag from the start.
+- Verify that the naming input should use top-N centroid-nearest rows plus nearby-cluster contrast, rather than sending whole clusters.
+- Verify that the naming output should be structured JSON with one entry per cluster.
+- Verify that cluster names should optimize for:
+  - reasonable brevity
+  - disambiguation from similar clusters
+  - UI-friendly length
+- Verify that the public ~300-row dataset should be:
+  - committed to the repo
+  - text-only
+  - accessible by raw GitHub URL
+  - documented with a copy-pasteable `uvx --from ...` command
+- Verify the proposed order:
+  - cache first
+  - public smoke-test dataset second
+  - audio support third
+  - cluster naming fourth
