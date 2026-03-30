@@ -75,7 +75,7 @@ Document what I should look at in `notes.md` under a `## How to review the plan`
 
 ---
 
-I agree with the plan with the following changes:
+I agree with the plan except for the following changes:
 
 - For v1, drop thumbnails. We will show only the full images, if they're available. No need to create thumbnails or embed them or link to them. Skip the thumbnail concept for now.
 - In all three popup modes, allow sorting by timeline and any other CSV column, not just in `table` mode. The default sort when timeline is present should be by timeline, but the user can change it to any column they want.
@@ -88,10 +88,10 @@ uvx --from "git+https://github.com/sanand0/embedumap.git@main" embedumap ...
 
 Based on these, revise PLAN.md.
 
+Commit as you go (including prompts.md which I'm editing). Create a public repo using the `gh` CLI and test the `uvx --from ...` workflow with it before you finish the implementation.
+
 Then implement it and test it on small datasets derived from the samples I've provided.
 
 Implement EFFICIENTLY. Use sub-agents as required.
-
-Commit as you go. Create a public repo using the `gh` CLI and test the `uvx --from ...` workflow with it before you finish the implementation.
 
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->

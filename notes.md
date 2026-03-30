@@ -23,7 +23,7 @@ What should be carried into `embedumap`:
   - good example of stable server-side analysis followed by a small browser payload
 - `chart-map`
   - best baseline for image-first grid popup behavior
-  - good reminder that image previews need thumbnails, not full originals
+  - best baseline for grid popup layout, but not for thumbnail generation in v1
 
 ## Current external constraints
 
@@ -69,7 +69,7 @@ Internal design choices:
   - 2D coordinates
   - derived cluster/color/filter/timeline values
   - popup-safe row payload
-  - optional thumbnail previews
+  - direct image references when image columns are present
 - The browser does not run UMAP or clustering.
 
 ## Proposed defaults
@@ -114,19 +114,17 @@ Why this interpretation is the cleanest:
 
 The `single index.html` requirement has real consequences.
 
-To make image datasets work when the HTML is opened directly:
-
-- the visualization data must be embedded inline
-- popup previews for local image files should be inlined as thumbnails or data URLs
-- otherwise a local-image dataset would depend on sidecar files and the output would not really be portable
+For v1, you explicitly asked to drop thumbnails.
 
 My recommendation:
 
 - inline all JSON data
 - inline CSS and JS
-- inline small thumbnail previews for image columns when needed
+- keep direct image references only
 - keep original raw CSV values visible in the popup
 - avoid a sidecar `embeddings.min.json`
+
+That means local image datasets will only display full images when the referenced files are directly reachable from the browser context.
 
 ## What I would deliberately not do in v1
 
@@ -136,6 +134,7 @@ My recommendation:
 - No audio/video/PDF-specific public flags yet
 - No multi-file build output
 - No browser-side fetching of a separate JSON payload
+- No thumbnail generation pipeline
 
 These can all come later if needed, but none are required for a clean first release.
 
@@ -151,7 +150,7 @@ It should report:
 - rows skipped for missing content
 - timeline parse success rate
 - filter/color cardinalities
-- whether local image previews would be inlined
+- whether image references look usable as-is
 - estimated Gemini request count
 - estimated output size risk
 - the exact defaults that will be applied
@@ -161,11 +160,11 @@ That gives you a fast way to validate the product shape on 3 or 4 representative
 ## Questions for you
 
 1. When `--cluster-columns` does not include `embeddings`, do you want direct labels from those columns, or K-means over encoded metadata anyway?
-2. Do you want the generated `index.html` to be fully standalone even for local-image datasets, which implies inlining preview thumbnails?
+2. Do you want the generated `index.html` to be considered acceptable even though local-image previews depend on those image files being directly reachable by the browser?
 3. Is it acceptable for v1 to expose only text and image columns publicly, while keeping the internal row-content builder generic enough for audio/video/PDF later?
 4. Should `--sample N` mean a deterministic random sample, or literally the first `N` rows?
 5. Do you want an extra `--output` option in v1, or should the tool always write `index.html` in the current directory?
-6. Is a compact hover tooltip with truncated field values acceptable if the popup always shows the full row, or do you want literally every cell untruncated on hover too?
+6. Is a compact hover tooltip with truncated field values acceptable if the popup always shows the full row, and every popup mode has user-selectable sorting across timeline and CSV columns?
 7. Do you want cluster count fixed internally for v1, or do you already know you want a public `--clusters` option?
 
 ## How to review the plan
@@ -176,7 +175,7 @@ That gives you a fast way to validate the product shape on 3 or 4 representative
 - Verify that `--cluster-columns` semantics are correct, especially the non-`embeddings` case.
 - Verify that `cluster` should always exist as a derived color/filter dimension even if not explicitly listed in the CSV.
 - Verify that `--dry-run` is the right first milestone before any full implementation.
-- Verify that a single-file deliverable really means no sidecar JSON and, for local-image datasets, inline preview thumbnails.
+- Verify that a single-file deliverable really means no sidecar JSON, even though v1 will not inline thumbnails.
 - Verify that the proposed defaults are acceptable:
   - model `gemini-embedding-2-preview`
   - dimensions `768`
@@ -189,8 +188,8 @@ That gives you a fast way to validate the product shape on 3 or 4 representative
   - no hierarchical cluster model
 - Verify that the three popup modes should behave this way:
   - `table`: sortable full-row table
-  - `list`: one selected row per card, ordered by timeline when present
-  - `grid`: image-first cards with metadata beneath
+  - `list`: one selected row per card, with the same sort controls as table mode
+  - `grid`: image-first cards with metadata beneath, with the same sort controls as table mode
 - Verify that the first representative datasets to test after approval should be:
   - a text-only blog or papers CSV
   - an image-heavy CSV with local filenames

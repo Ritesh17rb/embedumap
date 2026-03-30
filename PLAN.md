@@ -81,7 +81,7 @@ The command should read a local or remote CSV, generate Gemini-based embeddings,
    - Store derived cluster/color/filter/timeline metadata
    - Store raw row cells for popups
    - Store truncated label and tooltip display text separately from raw values
-   - Inline lightweight preview thumbnails for image-driven popups when needed
+   - Store direct image references only; do not generate thumbnails in v1
 
 7. Implement the standalone HTML template.
    - Inline CSS, JS, and JSON data
@@ -89,6 +89,8 @@ The command should read a local or remote CSV, generate Gemini-based embeddings,
    - Base list popups on `calvinmap`
    - Base grid popups on `chart-map`
    - Keep the frontend data-driven and generic rather than blog-specific or comic-specific
+   - Allow sorting by timeline or any CSV column in `table`, `list`, and `grid` modes
+   - Default popup sort to timeline when present, otherwise a stable row-order fallback
 
 8. Finish with docs and verification assets.
    - README with 3 representative commands
@@ -98,7 +100,7 @@ The command should read a local or remote CSV, generate Gemini-based embeddings,
 ## Default Assumptions To Confirm
 
 - `index.html` should be fully standalone, with inline data and no sidecar JSON.
-- `--image-columns` should inline preview thumbnails into the HTML so local image datasets still work when the HTML is opened directly.
+- `--image-columns` should preserve direct image references only; no thumbnail generation in v1.
 - `--cluster-columns embeddings` means K-means on embedding features.
 - `--cluster-columns category` should probably mean direct category labels, not K-means on one-hot metadata alone.
 - Sampling should be deterministic and reproducible.
@@ -109,5 +111,6 @@ The command should read a local or remote CSV, generate Gemini-based embeddings,
 - Confirm the single-file portability standard you want.
 - Confirm the clustering semantics you want when `embeddings` is absent from `--cluster-columns`.
 - Confirm whether v1 should stay limited to text + image CLI inputs, while keeping internals ready for richer media later.
-- Confirm whether inline thumbnails are acceptable for image datasets even if they increase HTML size.
+- Confirm that v1 should skip thumbnail generation entirely and show only full images when available.
+- Confirm that every popup mode should expose the same sort controls across timeline and CSV columns.
 - Confirm whether `--dry-run` should be the first milestone before any full build path.
