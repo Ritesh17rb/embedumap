@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import mimetypes
 import os
+from hashlib import sha256
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 from urllib.parse import unquote, urljoin, urlparse
 
+import duckdb
 import httpx
 import numpy as np
 import pandas as pd
@@ -27,12 +31,19 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 console = Console()
 DEFAULT_MODEL = "gemini-embedding-2-preview"
+DEFAULT_CLUSTER_NAMING_MODEL = "gemini-3-flash-preview"
 DEFAULT_DIMENSIONS = 768
 DEFAULT_BATCH_SIZE = 8
+DEFAULT_CACHE_NAME = "embedumap.duckdb"
 MAX_LABEL_CHARS = 140
 MAX_TOOLTIP_CHARS = 140
 UMAP_NEIGHBORS = 20
 UMAP_MIN_DIST = 0.15
+EMBEDDING_CACHE_VERSION = "embedumap-embedding-v1"
+CLUSTER_NAMING_VERSION = "embedumap-cluster-name-v1"
+CLUSTER_NAMING_TOP_N = 6
+CLUSTER_NAMING_NEIGHBORS = 2
+CLUSTER_NAMING_CONTRAST_ROWS = 3
 
 
 @dataclass(slots=True)
@@ -53,6 +64,8 @@ class BuildConfig:
     output_path: Path
     embedding_columns: list[str]
     image_columns: list[str]
+    audio_columns: list[str]
+    audio_metadata_columns: list[str]
     color_columns: list[str]
     filter_columns: list[str]
     cluster_columns: list[str]
@@ -60,15 +73,19 @@ class BuildConfig:
     timeline_column: str | None
     popup_style: str
     model: str
+    cluster_naming_model: str
+    cluster_names: bool
     dimensions: int
     sample: int | None
     dry_run: bool
 
 
 @dataclass(slots=True)
-class ImageInput:
-    """One image reference for embedding and popup display."""
+class MediaInput:
+    """One resolved media reference for embedding and popup display."""
 
+    kind: Literal["image", "audio"]
+    column: str
     raw_value: str
     display_url: str
     local_path: Path | None
@@ -85,7 +102,9 @@ class RowRecord:
     tooltip: dict[str, str]
     label: str
     text_payload: str
-    images: list[ImageInput]
+    audio_metadata_text: str
+    images: list[MediaInput]
+    audios: list[MediaInput]
     timeline_text: str | None
     timeline_ms: int | None
 
@@ -177,17 +196,39 @@ def row_text_payload(row: pd.Series, columns: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-def resolve_image_input(source: CsvSource, raw_value: str) -> ImageInput | None:
-    """Resolve one raw image cell into browser and embedding references."""
+def default_cache_path(output_path: Path) -> Path:
+    """Store the default cache beside the generated HTML output."""
+
+    return output_path.parent / DEFAULT_CACHE_NAME
+
+
+def resolve_media_input(
+    source: CsvSource,
+    raw_value: str,
+    *,
+    kind: Literal["image", "audio"],
+    column: str,
+) -> MediaInput | None:
+    """Resolve one raw media cell into browser and embedding references."""
 
     value = str(raw_value).strip()
     if not value:
         return None
     if is_http_url(value):
-        return ImageInput(raw_value=value, display_url=value, local_path=None, remote_url=value, exists=True)
+        return MediaInput(
+            kind=kind,
+            column=column,
+            raw_value=value,
+            display_url=value,
+            local_path=None,
+            remote_url=value,
+            exists=True,
+        )
     if is_file_url(value):
         path = Path(unquote(urlparse(value).path))
-        return ImageInput(
+        return MediaInput(
+            kind=kind,
+            column=column,
             raw_value=value,
             display_url=value,
             local_path=path,
@@ -196,13 +237,23 @@ def resolve_image_input(source: CsvSource, raw_value: str) -> ImageInput | None:
         )
     if source.csv_url:
         joined = urljoin(source.csv_url, value)
-        return ImageInput(raw_value=value, display_url=joined, local_path=None, remote_url=joined, exists=True)
+        return MediaInput(
+            kind=kind,
+            column=column,
+            raw_value=value,
+            display_url=joined,
+            local_path=None,
+            remote_url=joined,
+            exists=True,
+        )
     if not source.csv_path:
         return None
     path = Path(value)
     if not path.is_absolute():
         path = (source.csv_path.parent / path).resolve()
-    return ImageInput(
+    return MediaInput(
+        kind=kind,
+        column=column,
         raw_value=value,
         display_url=path.as_uri(),
         local_path=path,
@@ -220,7 +271,12 @@ def timeline_values(frame: pd.DataFrame, timeline_column: str | None) -> pd.Seri
     return parsed
 
 
-def default_label(row: pd.Series, embedding_columns: list[str], image_columns: list[str]) -> str:
+def default_label(
+    row: pd.Series,
+    embedding_columns: list[str],
+    image_columns: list[str],
+    audio_columns: list[str],
+) -> str:
     """Derive a row label when the user did not choose one explicitly."""
 
     if embedding_columns:
@@ -231,6 +287,10 @@ def default_label(row: pd.Series, embedding_columns: list[str], image_columns: l
         value = str(row[image_columns[0]]).strip()
         if value:
             return filename_tail(value)
+    if audio_columns:
+        value = str(row[audio_columns[0]]).strip()
+        if value:
+            return filename_tail(value)
     return f"Row {int(row['_row_index']) + 1}"
 
 
@@ -238,7 +298,13 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
     """Normalize rows, resolve labels, and collect image references."""
 
     frame = apply_sample(source.frame, config.sample)
-    validate_columns(frame, config.embedding_columns + config.image_columns)
+    validate_columns(
+        frame,
+        config.embedding_columns
+        + config.image_columns
+        + config.audio_columns
+        + config.audio_metadata_columns,
+    )
     validate_columns(frame, config.color_columns + config.filter_columns + config.label_columns)
     validate_columns(frame, [value for value in config.cluster_columns if value != "embeddings"], allow_special={"embeddings"})
     if config.timeline_column:
@@ -249,18 +315,40 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
     skipped_rows = 0
     missing_local_images = 0
     remote_image_rows = 0
+    missing_local_audios = 0
+    remote_audio_rows = 0
 
     for idx, row in frame.iterrows():
         raw = {column: str(row[column]) for column in source.frame.columns}
         tooltip = {column: truncate(raw[column], MAX_TOOLTIP_CHARS) for column in source.frame.columns}
         text_payload = row_text_payload(row, config.embedding_columns)
-        images = [resolved for column in config.image_columns if (resolved := resolve_image_input(source, raw[column]))]
+        images = [
+            resolved
+            for column in config.image_columns
+            if (resolved := resolve_media_input(source, raw[column], kind="image", column=column))
+        ]
+        audios = [
+            resolved
+            for column in config.audio_columns
+            if (resolved := resolve_media_input(source, raw[column], kind="audio", column=column))
+        ]
+        audio_metadata_text = (
+            row_text_payload(
+                row,
+                [column for column in config.audio_metadata_columns if column not in config.embedding_columns],
+            )
+            if audios
+            else ""
+        )
         if images:
             remote_image_rows += sum(image.remote_url is not None for image in images)
             missing_local_images += sum(image.local_path is not None and not image.exists for image in images)
+        if audios:
+            remote_audio_rows += sum(audio.remote_url is not None for audio in audios)
+            missing_local_audios += sum(audio.local_path is not None and not audio.exists for audio in audios)
         label = truncate(
             " | ".join(str(row[column]).strip() for column in config.label_columns if str(row[column]).strip())
-            or default_label(row, config.embedding_columns, config.image_columns),
+            or default_label(row, config.embedding_columns, config.image_columns, config.audio_columns),
             MAX_LABEL_CHARS,
         )
         timeline_text = None
@@ -270,7 +358,9 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
             timeline_text = timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
             timeline_ms = int(timestamp.value // 1_000_000)
 
-        has_content = bool(text_payload) or any(image.exists or image.remote_url for image in images)
+        has_content = bool(text_payload) or any(
+            media.exists or media.remote_url for media in [*images, *audios]
+        )
         if not has_content:
             skipped_rows += 1
             continue
@@ -281,7 +371,9 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
                 tooltip=tooltip,
                 label=label,
                 text_payload=text_payload,
+                audio_metadata_text=audio_metadata_text,
                 images=images,
+                audios=audios,
                 timeline_text=timeline_text,
                 timeline_ms=timeline_ms,
             )
@@ -298,6 +390,8 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
         "timeline_valid": timeline_valid,
         "missing_local_images": int(missing_local_images),
         "remote_image_rows": int(remote_image_rows),
+        "missing_local_audios": int(missing_local_audios),
+        "remote_audio_rows": int(remote_audio_rows),
         "frame": frame,
     }
     return records, report
@@ -316,10 +410,13 @@ def dry_run_report(source: CsvSource, config: BuildConfig, records: list[RowReco
     )
     console.print(f"Embedding columns: {config.embedding_columns or ['(none)']}")
     console.print(f"Image columns: {config.image_columns or ['(none)']}")
+    console.print(f"Audio columns: {config.audio_columns or ['(none)']}")
+    console.print(f"Audio metadata columns: {config.audio_metadata_columns or ['(none)']}")
     console.print(f"Color columns: {config.color_columns or ['(cluster only)']}")
     console.print(f"Filter columns: {config.filter_columns or ['(cluster only)']}")
     console.print(f"Cluster columns: {config.cluster_columns} ({cluster_mode})")
     console.print(f"Label columns: {config.label_columns or ['(derived default)']}")
+    console.print(f"Cluster naming: {'enabled' if config.cluster_names else 'disabled'} ({config.cluster_naming_model})")
     if config.timeline_column:
         console.print(
             f"Timeline: {config.timeline_column} ({report['timeline_valid']}/{report['timeline_non_empty']} parseable)"
@@ -328,29 +425,35 @@ def dry_run_report(source: CsvSource, config: BuildConfig, records: list[RowReco
         console.print(f"Missing local image references: {report['missing_local_images']}")
     if report["remote_image_rows"]:
         console.print(f"Rows with remote image URLs: {report['remote_image_rows']}")
+    if report["missing_local_audios"]:
+        console.print(f"Missing local audio references: {report['missing_local_audios']}")
+    if report["remote_audio_rows"]:
+        console.print(f"Rows with remote audio URLs: {report['remote_audio_rows']}")
     if color_counts:
         console.print(f"Color cardinalities: {color_counts}")
     if filter_counts:
         console.print(f"Filter cardinalities: {filter_counts}")
+    console.print(f"Cache: {default_cache_path(config.output_path)}")
     console.print(f"Output: {config.output_path}")
 
 
-def image_bytes(image: ImageInput) -> tuple[bytes, str]:
-    """Fetch one image payload and mime type for Gemini embedding."""
+def media_bytes(media: MediaInput) -> tuple[bytes, str]:
+    """Fetch one media payload and mime type for Gemini embedding."""
 
-    if image.local_path:
-        if not image.local_path.exists():
-            raise FileNotFoundError(f"Missing image file: {image.local_path}")
-        mime_type = mimetypes.guess_type(image.local_path.name)[0] or "application/octet-stream"
-        return normalized_image_bytes(image.local_path.read_bytes(), mime_type)
+    if media.local_path:
+        if not media.local_path.exists():
+            raise FileNotFoundError(f"Missing {media.kind} file: {media.local_path}")
+        mime_type = mimetypes.guess_type(media.local_path.name)[0] or "application/octet-stream"
+        data = media.local_path.read_bytes()
+        return normalized_image_bytes(data, mime_type) if media.kind == "image" else (data, mime_type)
 
-    if not image.remote_url:
-        raise FileNotFoundError(f"Could not resolve image reference: {image.raw_value}")
+    if not media.remote_url:
+        raise FileNotFoundError(f"Could not resolve {media.kind} reference: {media.raw_value}")
     with httpx.Client(follow_redirects=True, timeout=60) as client:
-        response = client.get(image.remote_url)
+        response = client.get(media.remote_url)
         response.raise_for_status()
-    mime_type = response.headers.get("content-type", "").split(";")[0] or mimetypes.guess_type(image.remote_url)[0] or "application/octet-stream"
-    return normalized_image_bytes(response.content, mime_type)
+    mime_type = response.headers.get("content-type", "").split(";")[0] or mimetypes.guess_type(media.remote_url)[0] or "application/octet-stream"
+    return normalized_image_bytes(response.content, mime_type) if media.kind == "image" else (response.content, mime_type)
 
 
 def normalized_image_bytes(data: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -371,8 +474,13 @@ def build_content(record: RowRecord) -> types.Content:
     parts: list[types.Part] = []
     if record.text_payload:
         parts.append(types.Part.from_text(text=record.text_payload))
+    if record.audio_metadata_text:
+        parts.append(types.Part.from_text(text=f"Audio metadata:\n{record.audio_metadata_text}"))
     for image in record.images:
-        data, mime_type = image_bytes(image)
+        data, mime_type = media_bytes(image)
+        parts.append(types.Part.from_bytes(data=data, mime_type=mime_type))
+    for audio in record.audios:
+        data, mime_type = media_bytes(audio)
         parts.append(types.Part.from_bytes(data=data, mime_type=mime_type))
     if not parts:
         raise ValueError(f"Row {record.row_index} has no embeddable content")
@@ -387,6 +495,145 @@ def normalize_vectors(matrix: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     safe = np.where(norms == 0, 1.0, norms)
     return matrix / safe
+
+
+def stable_json(value: object) -> str:
+    """Serialize compact stable JSON for hashing and cache payloads."""
+
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def ensure_cache_schema(connection: duckdb.DuckDBPyConnection) -> None:
+    """Create the small cache tables used for embeddings and cluster names."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS embedding_cache (
+          cache_key TEXT PRIMARY KEY,
+          source_label TEXT NOT NULL,
+          row_index BIGINT NOT NULL,
+          content_hash TEXT NOT NULL,
+          model TEXT NOT NULL,
+          dimensions INTEGER NOT NULL,
+          vector BLOB NOT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cluster_name_cache (
+          cache_key TEXT PRIMARY KEY,
+          model TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def with_cache(cache_path: Path) -> duckdb.DuckDBPyConnection:
+    """Open the default duckdb cache, creating parent directories as needed."""
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = duckdb.connect(str(cache_path))
+    ensure_cache_schema(connection)
+    return connection
+
+
+def media_signature(media: MediaInput) -> dict[str, object]:
+    """Build a stable cache signature for one media input without re-downloading it."""
+
+    signature: dict[str, object] = {
+        "kind": media.kind,
+        "column": media.column,
+        "raw_value": media.raw_value,
+        "display_url": media.display_url,
+        "exists": media.exists,
+    }
+    if media.local_path:
+        signature["local_path"] = str(media.local_path)
+        if media.exists:
+            stat = media.local_path.stat()
+            signature["size"] = stat.st_size
+            signature["mtime_ns"] = stat.st_mtime_ns
+    if media.remote_url:
+        signature["remote_url"] = media.remote_url
+    return signature
+
+
+def record_content_hash(record: RowRecord) -> str:
+    """Hash the normalized embeddable row inputs for cache reuse."""
+
+    payload = {
+        "text_payload": record.text_payload,
+        "audio_metadata_text": record.audio_metadata_text,
+        "images": [media_signature(image) for image in record.images],
+        "audios": [media_signature(audio) for audio in record.audios],
+    }
+    return sha256(stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def record_cache_key(source: CsvSource, record: RowRecord, model: str, dimensions: int) -> tuple[str, str]:
+    """Return the cache key plus the underlying content hash for one row."""
+
+    content_hash = record_content_hash(record)
+    payload = {
+        "version": EMBEDDING_CACHE_VERSION,
+        "source": source.label,
+        "row_index": record.row_index,
+        "content_hash": content_hash,
+        "model": model,
+        "dimensions": dimensions,
+    }
+    return sha256(stable_json(payload).encode("utf-8")).hexdigest(), content_hash
+
+
+def cached_vectors(
+    connection: duckdb.DuckDBPyConnection,
+    cache_keys: list[str],
+    dimensions: int,
+) -> dict[str, np.ndarray]:
+    """Fetch cached vectors for the requested keys."""
+
+    if not cache_keys:
+        return {}
+    placeholders = ", ".join("?" for _ in cache_keys)
+    rows = connection.execute(
+        f"SELECT cache_key, vector FROM embedding_cache WHERE cache_key IN ({placeholders})",
+        cache_keys,
+    ).fetchall()
+    return {
+        str(cache_key): np.frombuffer(vector_blob, dtype=np.float32, count=dimensions).copy()
+        for cache_key, vector_blob in rows
+    }
+
+
+def store_cached_vectors(
+    connection: duckdb.DuckDBPyConnection,
+    rows: list[tuple[str, str, int, str, str, int, bytes]],
+) -> None:
+    """Persist newly generated embeddings into the cache."""
+
+    if not rows:
+        return
+    connection.executemany(
+        """
+        INSERT OR REPLACE INTO embedding_cache
+          (cache_key, source_label, row_index, content_hash, model, dimensions, vector)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
+def gemini_client() -> genai.Client:
+    """Build a Gemini client from the environment."""
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("Set GEMINI_API_KEY in the environment or .env before building")
+    return genai.Client(api_key=api_key)
 
 
 @retry(
@@ -415,22 +662,40 @@ def embed_batch_once(
     return normalize_vectors(vectors)
 
 
-def embed_records(records: list[RowRecord], model: str, dimensions: int) -> np.ndarray:
-    """Embed all prepared rows with bounded retries and progress logging."""
+def embed_records(source: CsvSource, records: list[RowRecord], config: BuildConfig) -> np.ndarray:
+    """Embed all prepared rows with cache reuse, retries, and bounded batching."""
 
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("Set GEMINI_API_KEY in the environment or .env before building")
-    client = genai.Client(api_key=api_key)
-    batches: list[np.ndarray] = []
-    for start in range(0, len(records), DEFAULT_BATCH_SIZE):
-        batch = records[start : start + DEFAULT_BATCH_SIZE]
-        console.print(f"Embedding rows {start + 1}-{start + len(batch)} of {len(records)}...")
+    cache_path = default_cache_path(config.output_path)
+    cache_entries = [record_cache_key(source, record, config.model, config.dimensions) for record in records]
+    cache_keys = [cache_key for cache_key, _ in cache_entries]
+    with with_cache(cache_path) as connection:
+        cached = cached_vectors(connection, cache_keys, config.dimensions)
+
+    vectors = np.empty((len(records), config.dimensions), dtype=np.float32)
+    missing_indices = [idx for idx, cache_key in enumerate(cache_keys) if cache_key not in cached]
+    for idx, cache_key in enumerate(cache_keys):
+        if cache_key in cached:
+            vectors[idx] = cached[cache_key]
+
+    if not missing_indices:
+        console.print(f"Embedding cache hit: reused {len(records)} of {len(records)} rows from {cache_path}")
+        return vectors
+
+    client = gemini_client()
+    console.print(
+        f"Embedding cache hit: reused {len(records) - len(missing_indices)} of {len(records)} rows from {cache_path}"
+    )
+    rows_to_store: list[tuple[str, str, int, str, str, int, bytes]] = []
+    for start in range(0, len(missing_indices), DEFAULT_BATCH_SIZE):
+        batch_indices = missing_indices[start : start + DEFAULT_BATCH_SIZE]
+        batch = [records[idx] for idx in batch_indices]
+        batch_range = f"{batch_indices[0] + 1}-{batch_indices[-1] + 1}"
+        console.print(f"Embedding uncached rows {batch_range} of {len(records)}...")
         contents = [build_content(record) for record in batch]
         delay = 4
         for attempt in range(6):
             try:
-                batches.append(embed_batch_once(client, model, dimensions, contents))
+                batch_vectors = embed_batch_once(client, config.model, config.dimensions, contents)
                 break
             except genai_errors.ClientError as exc:
                 message = str(exc)
@@ -443,7 +708,24 @@ def embed_records(records: list[RowRecord], model: str, dimensions: int) -> np.n
 
                 time.sleep(delay)
                 delay = min(delay * 2, 120)
-    return np.vstack(batches) if batches else np.empty((0, dimensions), dtype=np.float32)
+        for idx, vector in zip(batch_indices, batch_vectors, strict=True):
+            vectors[idx] = vector
+            cache_key, content_hash = cache_entries[idx]
+            rows_to_store.append(
+                (
+                    cache_key,
+                    source.label,
+                    records[idx].row_index,
+                    content_hash,
+                    config.model,
+                    config.dimensions,
+                    vector.astype(np.float32).tobytes(),
+                )
+            )
+
+    with with_cache(cache_path) as connection:
+        store_cached_vectors(connection, rows_to_store)
+    return vectors
 
 
 def fallback_coords(vectors: np.ndarray) -> np.ndarray:
@@ -554,15 +836,312 @@ def kmeans_clusters(
     return mapped, names
 
 
-def analyze_records(records: list[RowRecord], config: BuildConfig) -> tuple[np.ndarray, np.ndarray, dict[int, str]]:
-    """Embed, project, and cluster the prepared rows."""
+def representative_row_payload(record: RowRecord) -> dict[str, object]:
+    """Build a compact row summary for cluster naming prompts."""
 
-    vectors = embed_records(records, config.model, config.dimensions)
+    summary_fields = []
+    for key, value in record.raw.items():
+        cleaned = str(value).strip()
+        if not cleaned:
+            continue
+        summary_fields.append(f"{key}={truncate(cleaned, 80)}")
+        if len(summary_fields) == 4:
+            break
+    return {
+        "row_index": record.row_index,
+        "label": record.label,
+        "text_excerpt": truncate(record.text_payload.replace("\n\n", " | "), 220) if record.text_payload else "",
+        "summary": " | ".join(summary_fields),
+        "timeline": record.timeline_text or "",
+    }
+
+
+def cluster_centroids(vectors: np.ndarray, cluster_ids: np.ndarray) -> dict[int, np.ndarray]:
+    """Compute one normalized centroid per cluster in embedding space."""
+
+    centroids: dict[int, np.ndarray] = {}
+    for cluster_id in sorted(set(int(value) for value in cluster_ids.tolist())):
+        centroid = vectors[cluster_ids == cluster_id].mean(axis=0, keepdims=True)
+        centroids[cluster_id] = normalize_vectors(centroid)[0]
+    return centroids
+
+
+def cluster_context_columns(config: BuildConfig, frame: pd.DataFrame) -> list[str]:
+    """Choose a small set of categorical columns that can help with naming."""
+
+    columns = list(
+        dict.fromkeys(
+            [
+                *config.color_columns,
+                *config.filter_columns,
+                *[column for column in config.cluster_columns if column != "embeddings"],
+                *([config.timeline_column] if config.timeline_column else []),
+            ]
+        )
+    )
+    return [column for column in columns if column in frame.columns]
+
+
+def salient_cluster_values(
+    records: list[RowRecord],
+    indices: np.ndarray,
+    columns: list[str],
+) -> list[str]:
+    """Summarize a few recurring column values for one cluster."""
+
+    if not columns:
+        return []
+    summaries: list[tuple[int, str]] = []
+    cluster_rows = [records[int(index)] for index in indices.tolist()]
+    for column in columns:
+        values = [row.raw[column].strip() or "(blank)" for row in cluster_rows]
+        counts = Counter(values)
+        if not counts:
+            continue
+        unique_count = len(counts)
+        if unique_count > min(8, max(3, len(cluster_rows) // 2)):
+            continue
+        top_values = counts.most_common(2)
+        rendered = ", ".join(f"{value} ({count}/{len(cluster_rows)})" for value, count in top_values)
+        summaries.append((top_values[0][1], f"{column}: {rendered}"))
+    summaries.sort(reverse=True)
+    return [summary for _, summary in summaries[:3]]
+
+
+def naming_context(
+    source: CsvSource,
+    records: list[RowRecord],
+    vectors: np.ndarray,
+    cluster_ids: np.ndarray,
+    cluster_labels: dict[int, str],
+    config: BuildConfig,
+) -> list[dict[str, object]]:
+    """Build the compact per-cluster context sent to the naming model."""
+
+    centroids = cluster_centroids(vectors, cluster_ids)
+    centroid_matrix = np.vstack([centroids[cluster_id] for cluster_id in sorted(centroids)])
+    similarity_matrix = centroid_matrix @ centroid_matrix.T if len(centroid_matrix) > 1 else np.ones((1, 1), dtype=np.float32)
+    cluster_order = sorted(centroids)
+    cluster_columns = cluster_context_columns(config, source.frame)
+    contexts: list[dict[str, object]] = []
+    for position, cluster_id in enumerate(cluster_order):
+        cluster_indices = np.where(cluster_ids == cluster_id)[0]
+        scores = vectors[cluster_indices] @ centroids[cluster_id]
+        top_local = cluster_indices[np.argsort(-scores)[:CLUSTER_NAMING_TOP_N]]
+        neighbor_positions = np.argsort(-similarity_matrix[position]).tolist()
+        contrast_clusters = [cluster_order[idx] for idx in neighbor_positions if cluster_order[idx] != cluster_id][
+            :CLUSTER_NAMING_NEIGHBORS
+        ]
+        nearby = []
+        for other_cluster_id in contrast_clusters:
+            other_indices = np.where(cluster_ids == other_cluster_id)[0]
+            other_scores = vectors[other_indices] @ centroids[other_cluster_id]
+            top_other = other_indices[np.argsort(-other_scores)[:CLUSTER_NAMING_CONTRAST_ROWS]]
+            nearby.append(
+                {
+                    "cluster_id": other_cluster_id,
+                    "label": cluster_labels[other_cluster_id],
+                    "rows": [representative_row_payload(records[int(index)]) for index in top_other.tolist()],
+                }
+            )
+        contexts.append(
+            {
+                "cluster_id": cluster_id,
+                "current_label": cluster_labels[cluster_id],
+                "size": int(len(cluster_indices)),
+                "salient_values": salient_cluster_values(records, cluster_indices, cluster_columns),
+                "rows": [representative_row_payload(records[int(index)]) for index in top_local.tolist()],
+                "nearby_clusters": nearby,
+            }
+        )
+    return contexts
+
+
+def cluster_name_cache_key(model: str, contexts: list[dict[str, object]]) -> str:
+    """Hash the naming request so cluster names can be reused independently."""
+
+    payload = {"version": CLUSTER_NAMING_VERSION, "model": model, "clusters": contexts}
+    return sha256(stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def load_cached_cluster_names(
+    connection: duckdb.DuckDBPyConnection,
+    cache_key: str,
+) -> dict[int, str] | None:
+    """Load cached cluster names for a given naming request."""
+
+    row = connection.execute(
+        "SELECT payload_json FROM cluster_name_cache WHERE cache_key = ?",
+        [cache_key],
+    ).fetchone()
+    if not row:
+        return None
+    payload = json.loads(str(row[0]))
+    if isinstance(payload, dict) and "clusters" in payload:
+        payload = payload["clusters"]
+    return {
+        int(item["cluster_id"]): str(item["name"]).strip()
+        for item in payload
+        if str(item.get("name", "")).strip()
+    }
+
+
+def store_cached_cluster_names(
+    connection: duckdb.DuckDBPyConnection,
+    cache_key: str,
+    model: str,
+    payload: list[dict[str, object]],
+) -> None:
+    """Persist generated cluster names in the cache."""
+
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO cluster_name_cache
+          (cache_key, model, payload_json)
+        VALUES (?, ?, ?)
+        """,
+        [cache_key, model, stable_json(payload)],
+    )
+
+
+@retry(
+    retry=retry_if_exception_type(genai_errors.ServerError),
+    wait=wait_exponential(multiplier=2, min=2, max=60),
+    stop=stop_after_attempt(6),
+    reraise=True,
+)
+def generate_cluster_names_once(
+    client: genai.Client,
+    model: str,
+    prompt: str,
+) -> str:
+    """Generate the structured JSON cluster-name response once."""
+
+    schema = {
+        "type": "ARRAY",
+        "items": {
+            "type": "OBJECT",
+            "properties": {
+                "cluster_id": {"type": "INTEGER"},
+                "name": {"type": "STRING"},
+                "rationale": {"type": "STRING"},
+            },
+            "required": ["cluster_id", "name"],
+        },
+    }
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.2,
+        ),
+    )
+    return response.text or "[]"
+
+
+def dedupe_cluster_names(
+    proposed: dict[int, str],
+    fallback: dict[int, str],
+) -> dict[int, str]:
+    """Keep cluster names short, non-empty, and unique."""
+
+    final: dict[int, str] = {}
+    seen: Counter[str] = Counter()
+    for cluster_id in sorted(fallback):
+        candidate = truncate(proposed.get(cluster_id, "").strip() or fallback[cluster_id], 48)
+        seen[candidate.casefold()] += 1
+        if seen[candidate.casefold()] > 1:
+            candidate = truncate(f"{candidate} ({seen[candidate.casefold()]})", 48)
+        final[cluster_id] = candidate
+    return final
+
+
+def maybe_name_clusters(
+    source: CsvSource,
+    records: list[RowRecord],
+    vectors: np.ndarray,
+    cluster_ids: np.ndarray,
+    cluster_labels: dict[int, str],
+    config: BuildConfig,
+) -> dict[int, str]:
+    """Replace generic cluster labels with short LLM-generated names when requested."""
+
+    if not config.cluster_names or not cluster_labels:
+        return cluster_labels
+
+    contexts = naming_context(source, records, vectors, cluster_ids, cluster_labels, config)
+    cache_key = cluster_name_cache_key(config.cluster_naming_model, contexts)
+    cache_path = default_cache_path(config.output_path)
+    with with_cache(cache_path) as connection:
+        cached = load_cached_cluster_names(connection, cache_key)
+    if cached:
+        console.print(f"Cluster-name cache hit: reused names from {cache_path}")
+        return dedupe_cluster_names(cached, cluster_labels)
+
+    prompt = "\n".join(
+        [
+            "Name each cluster for an embedding visualization.",
+            "Return only JSON: an array of objects with cluster_id, name, and optional rationale.",
+            "Use reasonably short names, ideally 2 to 5 words.",
+            "Names must characterize the cluster well, stay broad enough for future rows, and disambiguate similar nearby clusters.",
+            "Do not repeat generic labels like Cluster 1 unless you have no better option.",
+            "",
+            stable_json(contexts),
+        ]
+    )
+    client = gemini_client()
+    delay = 4
+    for attempt in range(6):
+        try:
+            text = generate_cluster_names_once(client, config.cluster_naming_model, prompt)
+            break
+        except genai_errors.ClientError as exc:
+            message = str(exc)
+            if "429" not in message and "RESOURCE_EXHAUSTED" not in message:
+                console.print(f"Cluster naming failed: {exc}. Keeping base labels.")
+                return cluster_labels
+            if attempt == 5:
+                console.print(f"Cluster naming failed: {exc}. Keeping base labels.")
+                return cluster_labels
+            console.print(f"Cluster naming rate limited. Sleeping {delay}s before retry {attempt + 1}/6.")
+            import time
+
+            time.sleep(delay)
+            delay = min(delay * 2, 120)
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict) and "clusters" in payload:
+            payload = payload["clusters"]
+        proposed = {
+            int(item["cluster_id"]): str(item["name"]).strip()
+            for item in payload
+            if str(item.get("name", "")).strip()
+        }
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        console.print(f"Cluster naming returned invalid JSON: {exc}. Keeping base labels.")
+        return cluster_labels
+
+    with with_cache(cache_path) as connection:
+        store_cached_cluster_names(connection, cache_key, config.cluster_naming_model, payload)
+    return dedupe_cluster_names(proposed, cluster_labels)
+
+
+def analyze_records(
+    source: CsvSource,
+    records: list[RowRecord],
+    config: BuildConfig,
+) -> tuple[np.ndarray, np.ndarray, dict[int, str]]:
+    """Embed, project, cluster, and optionally name the prepared rows."""
+
+    vectors = embed_records(source, records, config)
     coords = project_umap(vectors)
     if config.cluster_columns == ["embeddings"] or "embeddings" in config.cluster_columns:
         cluster_ids, cluster_labels = kmeans_clusters(records, vectors, config.cluster_columns)
     else:
         cluster_ids, cluster_labels = direct_cluster_labels(records, config.cluster_columns)
+    cluster_labels = maybe_name_clusters(source, records, vectors, cluster_ids, cluster_labels, config)
     return coords, cluster_ids, cluster_labels
 
 
@@ -595,6 +1174,15 @@ def build_payload(
             "clusterId": cluster_id,
             "clusterLabel": cluster_label,
             "images": [image.display_url for image in record.images],
+            "audios": [audio.display_url for audio in record.audios],
+            "imageUrlsByColumn": {
+                column: [image.display_url for image in record.images if image.column == column]
+                for column in config.image_columns
+            },
+            "audioUrlsByColumn": {
+                column: [audio.display_url for audio in record.audios if audio.column == column]
+                for column in config.audio_columns
+            },
             "raw": record.raw,
             "tooltip": record.tooltip,
             "colors": {
@@ -620,6 +1208,7 @@ def build_payload(
         "source": source.label,
         "columns": source.frame.columns.tolist(),
         "imageColumns": config.image_columns,
+        "audioColumns": config.audio_columns,
         "colorColumns": color_columns,
         "filterColumns": filter_columns,
         "sortColumns": sort_columns,

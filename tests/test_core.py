@@ -11,6 +11,7 @@ from embedumap.core import (
     BuildConfig,
     CsvSource,
     build_payload,
+    default_cache_path,
     direct_cluster_labels,
     split_option_values,
 )
@@ -43,6 +44,8 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         output_path=Path("index.html"),
         embedding_columns=["title"],
         image_columns=[],
+        audio_columns=[],
+        audio_metadata_columns=[],
         color_columns=["year"],
         filter_columns=[],
         cluster_columns=["embeddings"],
@@ -50,6 +53,8 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         timeline_column="year",
         popup_style="table",
         model="model",
+        cluster_naming_model="gemini-3-flash-preview",
+        cluster_names=False,
         dimensions=768,
         sample=None,
         dry_run=False,
@@ -60,10 +65,18 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         raw = {"title": "Hello", "year": "2024"}
         tooltip = raw
         label = "Hello"
+        audio_metadata_text = ""
         timeline_text = "2024-01-01 00:00:00 UTC"
         timeline_ms = 1704067200000
         images = []
+        audios = []
 
     payload = build_payload(source, config, [Record()], np.array([[0.0, 0.0]]), np.array([0]), {0: "Cluster 1"})
     assert payload["defaultSort"] == "year"
     assert payload["sortColumns"] == ["_row_index", "year", "title"]
+    assert payload["audioColumns"] == []
+
+
+def test_default_cache_path_tracks_output_directory() -> None:
+    output_path = Path("/tmp/embedumap/output/index.html")
+    assert default_cache_path(output_path) == Path("/tmp/embedumap/output/embedumap.duckdb")

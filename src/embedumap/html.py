@@ -93,6 +93,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     background: #020617;
     margin-bottom: 8px;
   }
+  #tooltip audio,
+  .popup-audio-list audio,
+  .card-audios audio {
+    width: 100%;
+  }
   .tooltip-label {
     font-size: 13px;
     font-weight: 700;
@@ -487,9 +492,30 @@ function renderImages(row) {
   )).join("")}</div>`;
 }
 
+function renderAudios(row) {
+  if (!row.audios.length) return "";
+  return `<div class="card-audios popup-audio-list">${row.audios.map((url) => (
+    `<audio controls preload="metadata" src="${escapeHtml(url)}"></audio>`
+  )).join("")}</div>`;
+}
+
+function renderMediaForColumn(row, column) {
+  const images = row.imageUrlsByColumn?.[column] ?? [];
+  const audios = row.audioUrlsByColumn?.[column] ?? [];
+  const imageHtml = images.map((url) => (
+    `<img src="${escapeHtml(url)}" alt="${escapeHtml(row.label)}" loading="lazy" fetchpriority="low" style="width:100%;max-height:240px;object-fit:contain;background:#020617;border-radius:6px;margin-bottom:6px;">`
+  )).join("");
+  const audioHtml = audios.map((url) => (
+    `<audio controls preload="metadata" src="${escapeHtml(url)}" style="width:100%;margin-bottom:6px;"></audio>`
+  )).join("");
+  return imageHtml + audioHtml;
+}
+
 function renderFieldGrid(row) {
   return Object.entries(row.raw)
-    .map(([key, value]) => `<div class="field-key">${escapeHtml(key)}</div><div class="field-value">${escapeHtml(value)}</div>`)
+    .map(([key, value]) => (
+      `<div class="field-key">${escapeHtml(key)}</div><div class="field-value">${renderMediaForColumn(row, key)}${escapeHtml(value)}</div>`
+    ))
     .join("");
 }
 
@@ -498,10 +524,7 @@ function renderTable(rows) {
   const body = rows.map((row) => {
     const cells = DATA.columns.map((column) => {
       const value = row.raw[column] ?? "";
-      const images = DATA.imageColumns.includes(column)
-        ? row.images.map((url) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(row.label)}" loading="lazy" fetchpriority="low" style="width:100%;max-height:240px;object-fit:contain;background:#020617;border-radius:6px;margin-bottom:6px;">`).join("")
-        : "";
-      return `<td>${images}${escapeHtml(value)}</td>`;
+      return `<td>${renderMediaForColumn(row, column)}${escapeHtml(value)}</td>`;
     }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
@@ -517,6 +540,7 @@ function renderCards(rows, grid) {
         <div class="card-subtitle">${escapeHtml(row.timelineText ?? row.clusterLabel)}</div>
       </div>
       ${renderImages(row)}
+      ${renderAudios(row)}
       <div class="card-fields">${renderFieldGrid(row)}</div>
     </article>
   `).join("")}</div>`;

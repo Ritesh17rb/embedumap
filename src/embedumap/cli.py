@@ -10,6 +10,7 @@ from rich.traceback import install
 
 from .core import (
     BuildConfig,
+    DEFAULT_CLUSTER_NAMING_MODEL,
     DEFAULT_DIMENSIONS,
     DEFAULT_MODEL,
     analyze_records,
@@ -42,6 +43,12 @@ def run(
     csv_input: str = typer.Argument(..., help="Local CSV path or HTTP(S) URL."),
     embedding_columns_raw: list[str] = typer.Option([], "--embedding-columns", help="Text columns to embed."),
     image_columns_raw: list[str] = typer.Option([], "--image-columns", help="Image URL/path columns to embed."),
+    audio_columns_raw: list[str] = typer.Option([], "--audio-columns", help="Audio URL/path columns to embed."),
+    audio_metadata_columns_raw: list[str] = typer.Option(
+        [],
+        "--audio-metadata-columns",
+        help="Optional text columns to include alongside audio embeddings.",
+    ),
     color_columns_raw: list[str] = typer.Option([], "--color-columns", help="Columns available for point colors."),
     filter_columns_raw: list[str] = typer.Option([], "--filter-columns", help="Columns exposed as filters."),
     timeline_column: str | None = typer.Option(None, "--timeline-column", help="Timeline column."),
@@ -58,6 +65,12 @@ def run(
     ),
     popup_style: str = typer.Option("table", "--popup-style", help="Popup layout: table, grid, or list."),
     model: str = typer.Option(DEFAULT_MODEL, "--model", help="Gemini embedding model."),
+    cluster_names: bool = typer.Option(False, "--cluster-names", help="Ask Gemini to generate short cluster names."),
+    cluster_naming_model: str = typer.Option(
+        DEFAULT_CLUSTER_NAMING_MODEL,
+        "--cluster-naming-model",
+        help="Gemini model used only for cluster naming.",
+    ),
     dimensions: int = typer.Option(DEFAULT_DIMENSIONS, "--dimensions", min=128, help="Embedding dimensionality."),
     sample: int | None = typer.Option(None, "--sample", min=1, help="Sample N rows before building."),
     output_path: Path = typer.Option(Path("index.html"), "--output", help="Where to write the HTML output."),
@@ -71,6 +84,8 @@ def run(
         output_path=output_path.expanduser().resolve(),
         embedding_columns=split_option_values(embedding_columns_raw),
         image_columns=split_option_values(image_columns_raw),
+        audio_columns=split_option_values(audio_columns_raw),
+        audio_metadata_columns=split_option_values(audio_metadata_columns_raw),
         color_columns=split_option_values(color_columns_raw),
         filter_columns=split_option_values(filter_columns_raw),
         cluster_columns=split_option_values(cluster_columns_raw) or ["embeddings"],
@@ -78,12 +93,16 @@ def run(
         timeline_column=timeline_column.strip() if timeline_column else None,
         popup_style=popup_style,
         model=model.strip(),
+        cluster_naming_model=cluster_naming_model.strip(),
+        cluster_names=cluster_names,
         dimensions=dimensions,
         sample=sample,
         dry_run=dry_run,
     )
-    if not config.embedding_columns and not config.image_columns:
-        raise typer.BadParameter("At least one of --embedding-columns or --image-columns is required.")
+    if not config.embedding_columns and not config.image_columns and not config.audio_columns:
+        raise typer.BadParameter(
+            "At least one of --embedding-columns, --image-columns, or --audio-columns is required."
+        )
 
     source = load_csv_source(config.csv_input)
     records, report = prepare_rows(source, config)
@@ -93,9 +112,9 @@ def run(
         dry_run_report(source, config, records, report)
         return
 
-    coords, cluster_ids, cluster_labels = analyze_records(records, config)
-    payload = build_payload(source, config, records, coords, cluster_ids, cluster_labels)
     config.output_path.parent.mkdir(parents=True, exist_ok=True)
+    coords, cluster_ids, cluster_labels = analyze_records(source, records, config)
+    payload = build_payload(source, config, records, coords, cluster_ids, cluster_labels)
     config.output_path.write_text(render_html(payload), encoding="utf-8")
     typer.echo(f"Wrote {config.output_path}")
 
