@@ -1,1 +1,6 @@
 .env
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+__pycache__/
