@@ -162,4 +162,10 @@ The bars are in the navbar and the navbar resizes as the number of bars changes.
 Instead they should be positioned absolutely on top of the UMAP visualization. Make sure the background is transparent, the bars have opacity 0.8, and the text has opacity 1.
 Add a CLI option to choose which corner to position the bar chart at.
 
+---
+
+As the number of digits in the bars increase, the bars shift left. Avoid that. One way is to position it like this:
+
+[left-aligned label] ... variable gap ... [right-aligned count] [fixed-width bar]
+
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->

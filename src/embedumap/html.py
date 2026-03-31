@@ -507,8 +507,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   .bar-row {
-    display: grid;
-    grid-template-columns: minmax(72px, 1fr) minmax(110px, 1.7fr) auto;
+    display: flex;
     gap: 8px;
     align-items: center;
     transition: opacity 180ms ease, transform 180ms ease;
@@ -523,18 +522,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   .bar-label {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .bar-count {
+    flex: 0 0 auto;
+    min-width: 3ch;
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
+    text-align: right;
   }
 
   .bar-track {
-    width: 100%;
+    flex: 0 0 132px;
+    width: 132px;
     height: 10px;
     border-radius: 999px;
     background: rgba(148, 163, 184, 0.12);
