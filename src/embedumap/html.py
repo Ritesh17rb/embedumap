@@ -158,13 +158,34 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     height: 100%;
   }
 
-  #overlay { cursor: crosshair; }
+  #overlay {
+    cursor: crosshair;
+    touch-action: none;
+  }
 
   .selection-box {
     fill: rgba(96, 165, 250, 0.14);
     stroke: rgba(96, 165, 250, 0.85);
     stroke-width: 1.4px;
-    display: none;
+    pointer-events: none;
+  }
+
+  select:focus-visible,
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid rgba(96, 165, 250, 0.55);
+    outline-offset: 2px;
+  }
+
+  option,
+  optgroup {
+    color: var(--text);
+    background: #111827;
+  }
+
+  option:checked {
+    background: #1d4ed8;
+    color: #eff6ff;
   }
 
   #loading {
@@ -619,7 +640,7 @@ const summary = $("#summary");
 const loading = $("#loading");
 const loadingTitle = $("#loading-title");
 const loadingCopy = $("#loading-copy");
-const selectionBox = overlay.append("rect").attr("class", "selection-box");
+const selectionBox = overlay.append("rect").attr("class", "selection-box").style("display", "none");
 
 let width = 0;
 let height = 0;
@@ -1133,7 +1154,12 @@ function updateSelectionBox() {
   const y = Math.min(dragState.startY, dragState.currentY);
   const w = Math.abs(dragState.currentX - dragState.startX);
   const h = Math.abs(dragState.currentY - dragState.startY);
-  selectionBox.attr("x", x).attr("y", y).attr("width", w).attr("height", h).style("display", null);
+  selectionBox
+    .attr("x", x)
+    .attr("y", y)
+    .attr("width", w)
+    .attr("height", h)
+    .style("display", "block");
 }
 
 function handlePointClick(event) {

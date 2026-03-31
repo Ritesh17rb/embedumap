@@ -136,4 +136,20 @@ There are a few problems.
 
 Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you go (including prompts.md which I'm editing).
 
+---
+
+More fixes:
+
+- Brushing works, but the rectangle that should appear when I brush does not appear.
+- The dropdowns show light grey on white when opened, making them almost invisible.
+
+Review the code for any other issues, opportunities to simplify, or refactor for elegance.
+Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you go (including prompts.md which I'm editing).
+
+---
+
+Modify the HTML to:
+
+- Make the state (filters, time range, color, etc.) bookmarkable and shareable. See reference implementations
+
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->
