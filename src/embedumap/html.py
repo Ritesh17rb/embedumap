@@ -76,9 +76,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   #timeline-bar {
+    display: none;
     border-top: 1px solid var(--stroke);
     border-bottom: none;
   }
+
+  #timeline-bar.visible { display: flex; }
 
   #brand {
     display: flex;
@@ -519,6 +522,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     border-radius: 999px;
     background: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%);
     cursor: grab;
+    touch-action: none;
     padding-block: 10px;
     box-sizing: content-box;
     background-clip: content-box;
@@ -830,8 +834,8 @@ function showTooltip(row, event) {
     .join("");
   tooltip.innerHTML = `${image}<div class="tooltip-label">${escapeHtml(row.label)}</div><div class="tooltip-grid">${fields}</div>`;
   tooltip.style.display = "block";
-  tooltip.style.left = `${Math.min(window.innerWidth - tooltip.offsetWidth - 12, event.clientX + 14)}px`;
-  tooltip.style.top = `${Math.min(window.innerHeight - tooltip.offsetHeight - 12, event.clientY + 14)}px`;
+  tooltip.style.left = `${Math.max(12, Math.min(window.innerWidth - tooltip.offsetWidth - 12, event.clientX + 14))}px`;
+  tooltip.style.top = `${Math.max(12, Math.min(window.innerHeight - tooltip.offsetHeight - 12, event.clientY + 14))}px`;
 }
 
 function comparator(left, right) {
@@ -884,10 +888,10 @@ function renderMediaForColumn(row, column) {
   return imageHtml + audioHtml;
 }
 
-function renderFieldGrid(row) {
+function renderFieldGrid(row, includeInlineMedia = true) {
   return Object.entries(row.raw)
     .map(([key, value]) => (
-      `<div class="field-key">${escapeHtml(key)}</div><div class="field-value">${renderMediaForColumn(row, key)}${escapeHtml(value)}</div>`
+      `<div class="field-key">${escapeHtml(key)}</div><div class="field-value">${includeInlineMedia ? renderMediaForColumn(row, key) : ""}${escapeHtml(value)}</div>`
     ))
     .join("");
 }
@@ -911,7 +915,7 @@ function renderCards(rows, grid) {
       </div>
       ${renderImages(row)}
       ${renderAudios(row)}
-      <div class="card-fields">${renderFieldGrid(row)}</div>
+      <div class="card-fields">${renderFieldGrid(row, false)}</div>
     </article>
   `).join("")}</div>`;
 }
@@ -919,6 +923,7 @@ function renderCards(rows, grid) {
 function hidePopupOnly() {
   popup.classList.remove("visible");
   popupBackdrop.classList.remove("visible");
+  popupBody.innerHTML = "";
 }
 
 function renderPopup() {
@@ -1073,9 +1078,11 @@ function startPlay() {
 
 function buildTimelineControls() {
   if (!DATA.timelineColumn || DATA.timelineMin == null || DATA.timelineMax == null) return;
+  $("#timeline-bar").classList.add("visible");
   $("#timeline-wrap").classList.add("visible");
   const minInput = $("#timeline-min");
   const maxInput = $("#timeline-max");
+  const timelineFill = $("#timeline-fill");
   minInput.min = "0";
   minInput.max = String(sliderMax);
   maxInput.min = "0";
@@ -1097,40 +1104,49 @@ function buildTimelineControls() {
     refreshScene();
   });
 
-  $("#timeline-fill").addEventListener("mousedown", (event) => {
-    if (state.playing) return;
+  let rangeDrag = null;
+  const updateRangeDrag = (event) => {
+    if (!rangeDrag || event.pointerId !== rangeDrag.pointerId) return;
+    const delta = ((event.clientX - rangeDrag.anchorX) / rangeDrag.rect.width) * (DATA.timelineMax - DATA.timelineMin);
+    const windowSize = rangeDrag.startMax - rangeDrag.startMin;
+    let nextMin = rangeDrag.startMin + delta;
+    let nextMax = rangeDrag.startMax + delta;
+    if (nextMin < DATA.timelineMin) {
+      nextMin = DATA.timelineMin;
+      nextMax = DATA.timelineMin + windowSize;
+    }
+    if (nextMax > DATA.timelineMax) {
+      nextMax = DATA.timelineMax;
+      nextMin = DATA.timelineMax - windowSize;
+    }
+    state.timelineMin = nextMin;
+    state.timelineMax = nextMax;
+    syncTimelineUi();
+    refreshScene();
+  };
+  const finishRangeDrag = (event) => {
+    if (!rangeDrag || (event && event.pointerId !== rangeDrag.pointerId)) return;
+    timelineFill.style.cursor = "grab";
+    timelineFill.releasePointerCapture?.(rangeDrag.pointerId);
+    rangeDrag = null;
+  };
+
+  timelineFill.addEventListener("pointerdown", (event) => {
+    if (state.playing || event.button !== 0) return;
     event.preventDefault();
-    const rect = $("#timeline-range").getBoundingClientRect();
-    const anchorX = event.clientX;
-    const startMin = state.timelineMin;
-    const startMax = state.timelineMax;
-    $("#timeline-fill").style.cursor = "grabbing";
-    const onMove = (moveEvent) => {
-      const delta = ((moveEvent.clientX - anchorX) / rect.width) * (DATA.timelineMax - DATA.timelineMin);
-      const windowSize = startMax - startMin;
-      let nextMin = startMin + delta;
-      let nextMax = startMax + delta;
-      if (nextMin < DATA.timelineMin) {
-        nextMin = DATA.timelineMin;
-        nextMax = DATA.timelineMin + windowSize;
-      }
-      if (nextMax > DATA.timelineMax) {
-        nextMax = DATA.timelineMax;
-        nextMin = DATA.timelineMax - windowSize;
-      }
-      state.timelineMin = nextMin;
-      state.timelineMax = nextMax;
-      syncTimelineUi();
-      refreshScene();
+    rangeDrag = {
+      pointerId: event.pointerId,
+      rect: $("#timeline-range").getBoundingClientRect(),
+      anchorX: event.clientX,
+      startMin: state.timelineMin,
+      startMax: state.timelineMax,
     };
-    const onUp = () => {
-      $("#timeline-fill").style.cursor = "grab";
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
+    timelineFill.style.cursor = "grabbing";
+    timelineFill.setPointerCapture?.(event.pointerId);
   });
+  timelineFill.addEventListener("pointermove", updateRangeDrag);
+  timelineFill.addEventListener("pointerup", finishRangeDrag);
+  timelineFill.addEventListener("pointercancel", finishRangeDrag);
 
   $("#timeline-play").addEventListener("click", () => {
     if (state.playing) pausePlay();

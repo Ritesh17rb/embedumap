@@ -1183,6 +1183,7 @@ def build_payload(
     coords: np.ndarray,
     cluster_ids: np.ndarray,
     cluster_labels: dict[int, str],
+    timeline_kind_value: str | None = None,
 ) -> dict[str, object]:
     """Build the browser payload consumed by the standalone HTML."""
 
@@ -1249,7 +1250,7 @@ def build_payload(
         "sortColumns": sort_columns,
         "defaultSort": config.timeline_column or "_row_index",
         "timelineColumn": config.timeline_column,
-        "timelineKind": timeline_kind(source.frame, config.timeline_column),
+        "timelineKind": timeline_kind_value if timeline_kind_value is not None else timeline_kind(source.frame, config.timeline_column),
         "timelineMin": min(timeline_values) if timeline_values else None,
         "timelineMax": max(timeline_values) if timeline_values else None,
         "clusters": [

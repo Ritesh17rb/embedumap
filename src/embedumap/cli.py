@@ -118,7 +118,15 @@ def run(
 
     config.output_path.parent.mkdir(parents=True, exist_ok=True)
     coords, cluster_ids, cluster_labels = analyze_records(source, records, config)
-    payload = build_payload(source, config, records, coords, cluster_ids, cluster_labels)
+    payload = build_payload(
+        source,
+        config,
+        records,
+        coords,
+        cluster_ids,
+        cluster_labels,
+        timeline_kind_value=report.get("timeline_kind"),
+    )
     config.output_path.write_text(render_html(payload), encoding="utf-8")
     typer.echo(f"Wrote {config.output_path}")
 

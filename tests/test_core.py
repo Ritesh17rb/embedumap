@@ -73,7 +73,15 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         images = []
         audios = []
 
-    payload = build_payload(source, config, [Record()], np.array([[0.0, 0.0]]), np.array([0]), {0: "Cluster 1"})
+    payload = build_payload(
+        source,
+        config,
+        [Record()],
+        np.array([[0.0, 0.0]]),
+        np.array([0]),
+        {0: "Cluster 1"},
+        timeline_kind_value="year",
+    )
     assert payload["defaultSort"] == "year"
     assert payload["sortColumns"] == ["_row_index", "year", "title"]
     assert payload["audioColumns"] == []
