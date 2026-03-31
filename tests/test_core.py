@@ -54,6 +54,7 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         branding="embedumap",
         opacity=1.0,
         bar_chart_corner="top-right",
+        axis_labels=True,
         popup_style="table",
         model="model",
         cluster_naming_model="gemini-3-flash-preview",
@@ -81,6 +82,7 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         np.array([[0.0, 0.0]]),
         np.array([0]),
         {0: "Cluster 1"},
+        axis_labels={"x": "People -> products", "y": "Narrative -> technical"},
         timeline_kind_value="year",
     )
     assert payload["defaultSort"] == "year"
@@ -89,6 +91,7 @@ def test_build_payload_includes_popup_sort_columns() -> None:
     assert payload["branding"] == "embedumap"
     assert payload["opacity"] == 1.0
     assert payload["barChartCorner"] == "top-right"
+    assert payload["axisLabels"] == {"x": "People -> products", "y": "Narrative -> technical"}
     assert payload["timelineKind"] == "year"
 
 

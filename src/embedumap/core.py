@@ -41,9 +41,11 @@ UMAP_NEIGHBORS = 20
 UMAP_MIN_DIST = 0.15
 EMBEDDING_CACHE_VERSION = "embedumap-embedding-v1"
 CLUSTER_NAMING_VERSION = "embedumap-cluster-name-v1"
+AXIS_LABEL_VERSION = "embedumap-axis-label-v1"
 CLUSTER_NAMING_TOP_N = 6
 CLUSTER_NAMING_NEIGHBORS = 2
 CLUSTER_NAMING_CONTRAST_ROWS = 3
+AXIS_LABEL_TOP_N = 6
 
 
 @dataclass(slots=True)
@@ -74,6 +76,7 @@ class BuildConfig:
     branding: str
     opacity: float
     bar_chart_corner: str
+    axis_labels: bool
     popup_style: str
     model: str
     cluster_naming_model: str
@@ -449,6 +452,7 @@ def dry_run_report(source: CsvSource, config: BuildConfig, records: list[RowReco
     console.print(f"Branding: {config.branding}")
     console.print(f"Opacity: {config.opacity}")
     console.print(f"Bar chart corner: {config.bar_chart_corner}")
+    console.print(f"Axis labels: {'enabled' if config.axis_labels else 'disabled'} ({config.cluster_naming_model})")
     console.print(f"Cluster naming: {'enabled' if config.cluster_names else 'disabled'} ({config.cluster_naming_model})")
     if config.timeline_column:
         console.print(
@@ -556,6 +560,16 @@ def ensure_cache_schema(connection: duckdb.DuckDBPyConnection) -> None:
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS cluster_name_cache (
+          cache_key TEXT PRIMARY KEY,
+          model TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS axis_label_cache (
           cache_key TEXT PRIMARY KEY,
           model TEXT NOT NULL,
           payload_json TEXT NOT NULL,
@@ -1037,31 +1051,126 @@ def store_cached_cluster_names(
     )
 
 
+def default_axis_labels() -> dict[str, str]:
+    """Return the fallback projection labels used without LLM interpretation."""
+
+    return {"x": "UMAP 1", "y": "UMAP 2"}
+
+
+def axis_side_payload(
+    records: list[RowRecord],
+    coords: np.ndarray,
+    cluster_ids: np.ndarray,
+    cluster_labels: dict[int, str],
+    indices: np.ndarray,
+    columns: list[str],
+) -> dict[str, object]:
+    """Summarize one side of the 2D projection for axis interpretation."""
+
+    rows = []
+    for index in indices.tolist():
+        summary = representative_row_payload(records[int(index)])
+        rows.append(
+            {
+                **summary,
+                "cluster_id": int(cluster_ids[int(index)]),
+                "cluster_label": cluster_labels[int(cluster_ids[int(index)])],
+                "x": round(float(coords[int(index), 0]), 4),
+                "y": round(float(coords[int(index), 1]), 4),
+            }
+        )
+    return {
+        "salient_values": salient_cluster_values(records, indices, columns),
+        "rows": rows,
+    }
+
+
+def axis_label_context(
+    source: CsvSource,
+    records: list[RowRecord],
+    coords: np.ndarray,
+    cluster_ids: np.ndarray,
+    cluster_labels: dict[int, str],
+    config: BuildConfig,
+) -> dict[str, object]:
+    """Build the compact prompt payload used to interpret the two plotted axes."""
+
+    if len(records) == 0:
+        return {"source": Path(source.label).name}
+    context_columns = cluster_context_columns(config, source.frame)
+    x_order = np.argsort(coords[:, 0])
+    y_order = np.argsort(coords[:, 1])
+    top_n = min(AXIS_LABEL_TOP_N, len(records))
+    return {
+        "source": Path(source.label).name,
+        "x_low": axis_side_payload(records, coords, cluster_ids, cluster_labels, x_order[:top_n], context_columns),
+        "x_high": axis_side_payload(
+            records, coords, cluster_ids, cluster_labels, x_order[::-1][:top_n], context_columns
+        ),
+        "y_low": axis_side_payload(records, coords, cluster_ids, cluster_labels, y_order[:top_n], context_columns),
+        "y_high": axis_side_payload(
+            records, coords, cluster_ids, cluster_labels, y_order[::-1][:top_n], context_columns
+        ),
+    }
+
+
+def axis_label_cache_key(model: str, context: dict[str, object]) -> str:
+    """Hash the axis-label request so projection labels can be reused."""
+
+    payload = {"version": AXIS_LABEL_VERSION, "model": model, "axis_context": context}
+    return sha256(stable_json(payload).encode("utf-8")).hexdigest()
+
+
+def load_cached_axis_labels(
+    connection: duckdb.DuckDBPyConnection,
+    cache_key: str,
+) -> dict[str, str] | None:
+    """Load cached axis labels for a given interpretation request."""
+
+    row = connection.execute(
+        "SELECT payload_json FROM axis_label_cache WHERE cache_key = ?",
+        [cache_key],
+    ).fetchone()
+    if not row:
+        return None
+    payload = json.loads(str(row[0]))
+    x_label = str(payload.get("x", "")).strip()
+    y_label = str(payload.get("y", "")).strip()
+    return {"x": x_label, "y": y_label} if x_label and y_label else None
+
+
+def store_cached_axis_labels(
+    connection: duckdb.DuckDBPyConnection,
+    cache_key: str,
+    model: str,
+    payload: dict[str, object],
+) -> None:
+    """Persist generated axis labels in the cache."""
+
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO axis_label_cache
+          (cache_key, model, payload_json)
+        VALUES (?, ?, ?)
+        """,
+        [cache_key, model, stable_json(payload)],
+    )
+
+
 @retry(
     retry=retry_if_exception_type(genai_errors.ServerError),
     wait=wait_exponential(multiplier=2, min=2, max=60),
     stop=stop_after_attempt(6),
     reraise=True,
 )
-def generate_cluster_names_once(
+def generate_structured_content_once(
     client: genai.Client,
     model: str,
     prompt: str,
+    schema: dict[str, object],
 ) -> str:
-    """Generate the structured JSON cluster-name response once."""
+    """Generate one structured JSON response via Gemini."""
 
-    schema = {
-        "type": "ARRAY",
-        "items": {
-            "type": "OBJECT",
-            "properties": {
-                "cluster_id": {"type": "INTEGER"},
-                "name": {"type": "STRING"},
-                "rationale": {"type": "STRING"},
-            },
-            "required": ["cluster_id", "name"],
-        },
-    }
     response = client.models.generate_content(
         model=model,
         contents=prompt,
@@ -1124,11 +1233,23 @@ def maybe_name_clusters(
             stable_json(contexts),
         ]
     )
+    schema = {
+        "type": "ARRAY",
+        "items": {
+            "type": "OBJECT",
+            "properties": {
+                "cluster_id": {"type": "INTEGER"},
+                "name": {"type": "STRING"},
+                "rationale": {"type": "STRING"},
+            },
+            "required": ["cluster_id", "name"],
+        },
+    }
     client = gemini_client()
     delay = 4
     for attempt in range(6):
         try:
-            text = generate_cluster_names_once(client, config.cluster_naming_model, prompt)
+            text = generate_structured_content_once(client, config.cluster_naming_model, prompt, schema)
             break
         except genai_errors.ClientError as exc:
             message = str(exc)
@@ -1161,11 +1282,91 @@ def maybe_name_clusters(
     return dedupe_cluster_names(proposed, cluster_labels)
 
 
+def maybe_label_axes(
+    source: CsvSource,
+    records: list[RowRecord],
+    coords: np.ndarray,
+    cluster_ids: np.ndarray,
+    cluster_labels: dict[int, str],
+    config: BuildConfig,
+) -> dict[str, str]:
+    """Interpret the plotted x/y dimensions with short human-facing labels."""
+
+    fallback = default_axis_labels()
+    if not config.axis_labels or len(records) < 3:
+        return fallback
+
+    context = axis_label_context(source, records, coords, cluster_ids, cluster_labels, config)
+    cache_key = axis_label_cache_key(config.cluster_naming_model, context)
+    cache_path = default_cache_path(config.output_path)
+    with with_cache(cache_path) as connection:
+        cached = load_cached_axis_labels(connection, cache_key)
+    if cached:
+        console.print(f"Axis-label cache hit: reused labels from {cache_path}")
+        return cached
+
+    prompt = "\n".join(
+        [
+            "Interpret the two plotted dimensions of an embedding visualization for humans.",
+            "Return only JSON with keys x and y.",
+            "Each label must describe movement from low to high values in 3 to 10 words.",
+            "Use a compact directional form like 'Personal stories -> AI tooling'.",
+            "Be intuitive and tentative. These are latent embedding axes, so do not overclaim.",
+            "Do not mention UMAP, coordinates, or row ids in the labels.",
+            "",
+            stable_json(context),
+        ]
+    )
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "x": {"type": "STRING"},
+            "y": {"type": "STRING"},
+            "x_rationale": {"type": "STRING"},
+            "y_rationale": {"type": "STRING"},
+        },
+        "required": ["x", "y"],
+    }
+    client = gemini_client()
+    delay = 4
+    for attempt in range(6):
+        try:
+            text = generate_structured_content_once(client, config.cluster_naming_model, prompt, schema)
+            break
+        except genai_errors.ClientError as exc:
+            message = str(exc)
+            if "429" not in message and "RESOURCE_EXHAUSTED" not in message:
+                console.print(f"Axis labeling failed: {exc}. Keeping fallback labels.")
+                return fallback
+            if attempt == 5:
+                console.print(f"Axis labeling failed: {exc}. Keeping fallback labels.")
+                return fallback
+            console.print(f"Axis labeling rate limited. Sleeping {delay}s before retry {attempt + 1}/6.")
+            import time
+
+            time.sleep(delay)
+            delay = min(delay * 2, 120)
+    try:
+        payload = json.loads(text)
+        x_label = truncate(str(payload.get("x", "")).strip(), 72)
+        y_label = truncate(str(payload.get("y", "")).strip(), 72)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        console.print(f"Axis labeling returned invalid JSON: {exc}. Keeping fallback labels.")
+        return fallback
+    if not x_label or not y_label:
+        return fallback
+
+    labels = {"x": x_label, "y": y_label}
+    with with_cache(cache_path) as connection:
+        store_cached_axis_labels(connection, cache_key, config.cluster_naming_model, labels)
+    return labels
+
+
 def analyze_records(
     source: CsvSource,
     records: list[RowRecord],
     config: BuildConfig,
-) -> tuple[np.ndarray, np.ndarray, dict[int, str]]:
+) -> tuple[np.ndarray, np.ndarray, dict[int, str], dict[str, str]]:
     """Embed, project, cluster, and optionally name the prepared rows."""
 
     vectors = embed_records(source, records, config)
@@ -1175,7 +1376,8 @@ def analyze_records(
     else:
         cluster_ids, cluster_labels = direct_cluster_labels(records, config.cluster_columns)
     cluster_labels = maybe_name_clusters(source, records, vectors, cluster_ids, cluster_labels, config)
-    return coords, cluster_ids, cluster_labels
+    axis_labels = maybe_label_axes(source, records, coords, cluster_ids, cluster_labels, config)
+    return coords, cluster_ids, cluster_labels, axis_labels
 
 
 def build_payload(
@@ -1185,6 +1387,7 @@ def build_payload(
     coords: np.ndarray,
     cluster_ids: np.ndarray,
     cluster_labels: dict[int, str],
+    axis_labels: dict[str, str] | None = None,
     timeline_kind_value: str | None = None,
 ) -> dict[str, object]:
     """Build the browser payload consumed by the standalone HTML."""
@@ -1243,6 +1446,7 @@ def build_payload(
         "sourceName": source_name,
         "opacity": config.opacity,
         "barChartCorner": config.bar_chart_corner,
+        "axisLabels": axis_labels or default_axis_labels(),
         "popupStyle": config.popup_style,
         "source": source.label,
         "columns": source.frame.columns.tolist(),

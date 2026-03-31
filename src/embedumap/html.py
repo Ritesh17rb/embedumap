@@ -444,10 +444,45 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     font-size: 12px;
   }
 
-  #summary {
+  #status-stack {
     margin-left: auto;
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+  }
+
+  #summary {
     color: var(--text-dim);
     text-align: right;
+  }
+
+  #axis-legend {
+    display: grid;
+    gap: 2px;
+    justify-items: end;
+  }
+
+  .axis-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    max-width: min(520px, 50vw);
+    font-size: 0.76rem;
+    color: var(--text-dim);
+  }
+
+  .axis-tag {
+    color: var(--text-faint);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+
+  .axis-text {
+    color: var(--text);
+    text-align: right;
+    text-wrap: balance;
   }
 
   #bar-chart {
@@ -657,7 +692,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   @media (max-width: 900px) {
+    #status-stack,
+    #axis-legend {
+      justify-items: start;
+    }
+
     #summary {
+      text-align: left;
+    }
+
+    .axis-row {
+      max-width: 100%;
+    }
+
+    .axis-text {
       text-align: left;
     }
 
@@ -683,7 +731,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="color-group" class="button-group"></div>
     <span class="label">Filter</span>
     <div id="filter-group" class="button-group"></div>
-    <div id="summary" class="label"></div>
+    <div id="status-stack">
+      <div id="summary" class="label"></div>
+      <div id="axis-legend" aria-label="Projection axes">
+        <div class="axis-row"><span class="axis-tag">X</span><span id="axis-x-label" class="axis-text"></span></div>
+        <div class="axis-row"><span class="axis-tag">Y</span><span id="axis-y-label" class="axis-text"></span></div>
+      </div>
+    </div>
   </div>
   <div id="plot-wrap">
     <div id="loading">
@@ -758,6 +812,8 @@ const popupBody = $("#popup-body");
 const popupTitle = $("#popup-title");
 const popupStyleLabel = $("#popup-style-label");
 const summary = $("#summary");
+const axisXLabel = $("#axis-x-label");
+const axisYLabel = $("#axis-y-label");
 const barChart = $("#bar-chart");
 const barChartHead = $("#bar-chart-head");
 const barChartBody = d3.select("#bar-chart-body");
@@ -1221,6 +1277,8 @@ function refreshScene({ scene = sceneRows(), syncUrl = true } = {}) {
 function buildBrand() {
   $("#brand-title").textContent = DATA.branding || "embedumap";
   $("#brand-subtitle").textContent = DATA.sourceName || "Standalone map";
+  axisXLabel.textContent = DATA.axisLabels?.x || "UMAP 1";
+  axisYLabel.textContent = DATA.axisLabels?.y || "UMAP 2";
   barChart.dataset.corner = DATA.barChartCorner || "top-right";
 }
 

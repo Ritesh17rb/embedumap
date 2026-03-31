@@ -68,6 +68,11 @@ def run(
         "--bar-chart-corner",
         help="Corner used for the overlay bar chart.",
     ),
+    axis_labels: bool = typer.Option(
+        True,
+        "--axis-labels/--no-axis-labels",
+        help="Ask Gemini to interpret the plotted x/y axes.",
+    ),
     cluster_columns_raw: list[str] = typer.Option(
         ["embeddings"],
         "--cluster-columns",
@@ -85,7 +90,7 @@ def run(
     cluster_naming_model: str = typer.Option(
         DEFAULT_CLUSTER_NAMING_MODEL,
         "--cluster-naming-model",
-        help="Gemini model used only for cluster naming.",
+        help="Gemini model used for cluster naming and axis interpretation.",
     ),
     dimensions: int = typer.Option(DEFAULT_DIMENSIONS, "--dimensions", min=128, help="Embedding dimensionality."),
     sample: int | None = typer.Option(None, "--sample", min=1, help="Sample N rows before building."),
@@ -111,6 +116,7 @@ def run(
         branding=branding.strip() or "embedumap",
         opacity=opacity,
         bar_chart_corner=bar_chart_corner,
+        axis_labels=axis_labels,
         popup_style=popup_style,
         model=model.strip(),
         cluster_naming_model=cluster_naming_model.strip(),
@@ -133,7 +139,7 @@ def run(
         return
 
     config.output_path.parent.mkdir(parents=True, exist_ok=True)
-    coords, cluster_ids, cluster_labels = analyze_records(source, records, config)
+    coords, cluster_ids, cluster_labels, axis_labels_map = analyze_records(source, records, config)
     payload = build_payload(
         source,
         config,
@@ -141,6 +147,7 @@ def run(
         coords,
         cluster_ids,
         cluster_labels,
+        axis_labels=axis_labels_map,
         timeline_kind_value=report.get("timeline_kind"),
     )
     config.output_path.write_text(render_html(payload), encoding="utf-8")

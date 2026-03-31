@@ -168,4 +168,8 @@ As the number of digits in the bars increase, the bars shift left. Avoid that. O
 
 [left-aligned label] ... variable gap ... [right-aligned count] [fixed-width bar]
 
+---
+
+Use a Gemini API call to the same model used for cluster naming to interpret the axes intuitively instead of calling them UMAP 1 and UMAP 2 in the generated HTML. Call this by default, but add a CLI option to turn it off if needed.
+
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->
