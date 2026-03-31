@@ -52,6 +52,8 @@ def run(
     color_columns_raw: list[str] = typer.Option([], "--color-columns", help="Columns available for point colors."),
     filter_columns_raw: list[str] = typer.Option([], "--filter-columns", help="Columns exposed as filters."),
     timeline_column: str | None = typer.Option(None, "--timeline-column", help="Timeline column."),
+    branding: str = typer.Option("embedumap", "--branding", help="Brand shown at the top left of the page."),
+    opacity: float = typer.Option(1.0, "--opacity", min=0.0, max=1.0, help="Base point opacity."),
     cluster_columns_raw: list[str] = typer.Option(
         ["embeddings"],
         "--cluster-columns",
@@ -91,6 +93,8 @@ def run(
         cluster_columns=split_option_values(cluster_columns_raw) or ["embeddings"],
         label_columns=split_option_values(label_columns_raw),
         timeline_column=timeline_column.strip() if timeline_column else None,
+        branding=branding.strip() or "embedumap",
+        opacity=opacity,
         popup_style=popup_style,
         model=model.strip(),
         cluster_naming_model=cluster_naming_model.strip(),

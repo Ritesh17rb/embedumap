@@ -122,4 +122,18 @@ Based on these, revise PLAN.md.
 
 Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you go (including prompts.md which I'm editing).
 
+---
+
+There are a few problems.
+
+- Show an elegant loading indicator while the dataset loads - it can be quite large sometimes.
+- Brushing does not work. When I drag and release, no popup appears. The references I have you had these working.
+- Escape does not close popup. The close button is not positioned well - the references had an icon on the right. Closing the popup shows a blurred set of circles. Clicking fixes the opacity.
+- There's no play option in timeline. Dragging the timeline range does not work. Again, something that's working on the references.
+- Usebetter formatting of timeline labels (auto-discover - it might be year, date, datetime, etc. Format accordingly. ISO date is terrible for UI.)
+- Add a CLI option for the page branding that will appear on the top left.
+- Add a CLI option for opacity that defaults to 1.
+
+Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you go (including prompts.md which I'm editing).
+
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->

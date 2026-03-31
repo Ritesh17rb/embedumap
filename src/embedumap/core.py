@@ -71,6 +71,8 @@ class BuildConfig:
     cluster_columns: list[str]
     label_columns: list[str]
     timeline_column: str | None
+    branding: str
+    opacity: float
     popup_style: str
     model: str
     cluster_naming_model: str
@@ -271,6 +273,31 @@ def timeline_values(frame: pd.DataFrame, timeline_column: str | None) -> pd.Seri
     return parsed
 
 
+def timeline_kind(frame: pd.DataFrame, timeline_column: str | None) -> str | None:
+    """Infer a friendly timeline formatting mode from the raw CSV values."""
+
+    if not timeline_column:
+        return None
+    values = [str(value).strip() for value in frame[timeline_column].tolist() if str(value).strip()]
+    if not values:
+        return None
+    if all(value.isdigit() and len(value) == 4 for value in values):
+        return "year"
+    has_time = any((":" in value) or ("T" in value) for value in values)
+    return "datetime" if has_time else "date"
+
+
+def format_timeline_text(timestamp: pd.Timestamp, kind: str | None) -> str:
+    """Render a compact, UI-friendly timeline label."""
+
+    as_utc = timestamp.tz_convert("UTC") if timestamp.tzinfo is not None else timestamp.tz_localize("UTC")
+    if kind == "year":
+        return as_utc.strftime("%Y")
+    if kind == "date":
+        return as_utc.strftime("%d %b %Y")
+    return as_utc.strftime("%d %b %Y, %H:%M UTC")
+
+
 def default_label(
     row: pd.Series,
     embedding_columns: list[str],
@@ -311,6 +338,7 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
         validate_columns(frame, [config.timeline_column])
 
     parsed_timeline = timeline_values(frame, config.timeline_column)
+    inferred_timeline_kind = timeline_kind(frame, config.timeline_column)
     records: list[RowRecord] = []
     skipped_rows = 0
     missing_local_images = 0
@@ -355,7 +383,7 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
         timeline_ms = None
         if parsed_timeline is not None and not pd.isna(parsed_timeline.iloc[idx]):
             timestamp = parsed_timeline.iloc[idx]
-            timeline_text = timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+            timeline_text = format_timeline_text(timestamp, inferred_timeline_kind)
             timeline_ms = int(timestamp.value // 1_000_000)
 
         has_content = bool(text_payload) or any(
@@ -392,6 +420,7 @@ def prepare_rows(source: CsvSource, config: BuildConfig) -> tuple[list[RowRecord
         "remote_image_rows": int(remote_image_rows),
         "missing_local_audios": int(missing_local_audios),
         "remote_audio_rows": int(remote_audio_rows),
+        "timeline_kind": inferred_timeline_kind,
         "frame": frame,
     }
     return records, report
@@ -416,10 +445,12 @@ def dry_run_report(source: CsvSource, config: BuildConfig, records: list[RowReco
     console.print(f"Filter columns: {config.filter_columns or ['(cluster only)']}")
     console.print(f"Cluster columns: {config.cluster_columns} ({cluster_mode})")
     console.print(f"Label columns: {config.label_columns or ['(derived default)']}")
+    console.print(f"Branding: {config.branding}")
+    console.print(f"Opacity: {config.opacity}")
     console.print(f"Cluster naming: {'enabled' if config.cluster_names else 'disabled'} ({config.cluster_naming_model})")
     if config.timeline_column:
         console.print(
-            f"Timeline: {config.timeline_column} ({report['timeline_valid']}/{report['timeline_non_empty']} parseable)"
+            f"Timeline: {config.timeline_column} ({report['timeline_kind'] or 'unknown'}, {report['timeline_valid']}/{report['timeline_non_empty']} parseable)"
         )
     if report["missing_local_images"]:
         console.print(f"Missing local image references: {report['missing_local_images']}")
@@ -1200,10 +1231,14 @@ def build_payload(
     y_values = [row["y"] for row in rows] or [0.0]
     cluster_counts = Counter(int(cluster_id) for cluster_id in cluster_ids.tolist())
     timeline_values = [row["timelineMs"] for row in rows if row["timelineMs"] is not None]
+    source_name = Path(source.label).name
 
     return {
-        "title": f"embedumap · {Path(source.label).name}",
+        "title": f"{config.branding} · {source_name}",
         "generated": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "branding": config.branding,
+        "sourceName": source_name,
+        "opacity": config.opacity,
         "popupStyle": config.popup_style,
         "source": source.label,
         "columns": source.frame.columns.tolist(),
@@ -1214,6 +1249,7 @@ def build_payload(
         "sortColumns": sort_columns,
         "defaultSort": config.timeline_column or "_row_index",
         "timelineColumn": config.timeline_column,
+        "timelineKind": timeline_kind(source.frame, config.timeline_column),
         "timelineMin": min(timeline_values) if timeline_values else None,
         "timelineMax": max(timeline_values) if timeline_values else None,
         "clusters": [

@@ -35,7 +35,7 @@ def test_direct_cluster_labels_use_raw_column_values() -> None:
 def test_build_payload_includes_popup_sort_columns() -> None:
     source = CsvSource(
         label="sample.csv",
-        frame=pd.DataFrame(columns=["title", "year"]),
+        frame=pd.DataFrame([{"title": "Hello", "year": "2024"}], columns=["title", "year"]),
         csv_path=None,
         csv_url=None,
     )
@@ -51,6 +51,8 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         cluster_columns=["embeddings"],
         label_columns=[],
         timeline_column="year",
+        branding="embedumap",
+        opacity=1.0,
         popup_style="table",
         model="model",
         cluster_naming_model="gemini-3-flash-preview",
@@ -75,6 +77,9 @@ def test_build_payload_includes_popup_sort_columns() -> None:
     assert payload["defaultSort"] == "year"
     assert payload["sortColumns"] == ["_row_index", "year", "title"]
     assert payload["audioColumns"] == []
+    assert payload["branding"] == "embedumap"
+    assert payload["opacity"] == 1.0
+    assert payload["timelineKind"] == "year"
 
 
 def test_default_cache_path_tracks_output_directory() -> None:
