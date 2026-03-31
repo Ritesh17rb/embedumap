@@ -53,6 +53,7 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         timeline_column="year",
         branding="embedumap",
         opacity=1.0,
+        bar_chart_corner="top-right",
         popup_style="table",
         model="model",
         cluster_naming_model="gemini-3-flash-preview",
@@ -87,6 +88,7 @@ def test_build_payload_includes_popup_sort_columns() -> None:
     assert payload["audioColumns"] == []
     assert payload["branding"] == "embedumap"
     assert payload["opacity"] == 1.0
+    assert payload["barChartCorner"] == "top-right"
     assert payload["timelineKind"] == "year"
 
 

@@ -73,6 +73,7 @@ class BuildConfig:
     timeline_column: str | None
     branding: str
     opacity: float
+    bar_chart_corner: str
     popup_style: str
     model: str
     cluster_naming_model: str
@@ -447,6 +448,7 @@ def dry_run_report(source: CsvSource, config: BuildConfig, records: list[RowReco
     console.print(f"Label columns: {config.label_columns or ['(derived default)']}")
     console.print(f"Branding: {config.branding}")
     console.print(f"Opacity: {config.opacity}")
+    console.print(f"Bar chart corner: {config.bar_chart_corner}")
     console.print(f"Cluster naming: {'enabled' if config.cluster_names else 'disabled'} ({config.cluster_naming_model})")
     if config.timeline_column:
         console.print(
@@ -1240,6 +1242,7 @@ def build_payload(
         "branding": config.branding,
         "sourceName": source_name,
         "opacity": config.opacity,
+        "barChartCorner": config.bar_chart_corner,
         "popupStyle": config.popup_style,
         "source": source.label,
         "columns": source.frame.columns.tolist(),

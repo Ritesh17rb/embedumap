@@ -151,6 +151,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     position: relative;
     overflow: hidden;
     min-height: 0;
+    isolation: isolate;
   }
 
   #plot,
@@ -162,6 +163,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   #overlay {
+    z-index: 1;
     cursor: crosshair;
     touch-action: none;
   }
@@ -442,31 +444,44 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     font-size: 12px;
   }
 
-  #insights {
-    margin-left: auto;
-    display: grid;
-    gap: 8px;
-    min-width: min(360px, 100%);
-    justify-items: end;
-    flex: 1 1 320px;
-  }
-
   #summary {
+    margin-left: auto;
     color: var(--text-dim);
     text-align: right;
   }
 
   #bar-chart {
-    width: min(360px, 100%);
+    position: absolute;
+    z-index: 2;
+    width: min(340px, calc(100% - 28px));
     display: grid;
     gap: 6px;
-    padding: 10px 12px;
-    border: 1px solid var(--stroke);
-    border-radius: 14px;
-    background: rgba(11, 18, 32, 0.72);
+    padding: 0;
+    pointer-events: none;
+    background: transparent;
   }
 
   #bar-chart.hidden { display: none; }
+
+  #bar-chart[data-corner="top-left"] {
+    top: 16px;
+    left: 16px;
+  }
+
+  #bar-chart[data-corner="top-right"] {
+    top: 16px;
+    right: 16px;
+  }
+
+  #bar-chart[data-corner="bottom-left"] {
+    bottom: 16px;
+    left: 16px;
+  }
+
+  #bar-chart[data-corner="bottom-right"] {
+    right: 16px;
+    bottom: 16px;
+  }
 
   .bar-chart-head {
     display: flex;
@@ -477,11 +492,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    opacity: 1;
+    text-shadow: 0 1px 12px rgba(2, 6, 23, 0.9);
   }
 
   .bar-chart-body {
     display: grid;
     gap: 5px;
+  }
+
+  .bar-chart-body .label {
+    opacity: 1;
+    text-shadow: 0 1px 12px rgba(2, 6, 23, 0.9);
   }
 
   .bar-row {
@@ -496,6 +518,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .bar-count {
     font-size: 12px;
     color: var(--text);
+    opacity: 1;
+    text-shadow: 0 1px 12px rgba(2, 6, 23, 0.9);
   }
 
   .bar-label {
@@ -520,6 +544,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .bar-fill {
     height: 100%;
     min-width: 2px;
+    opacity: 0.8;
     border-radius: 999px;
     transition: width 180ms linear, background 180ms linear;
   }
@@ -627,11 +652,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   @media (max-width: 900px) {
-    #insights {
-      width: 100%;
-      justify-items: stretch;
-    }
-
     #summary {
       text-align: left;
     }
@@ -658,13 +678,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="color-group" class="button-group"></div>
     <span class="label">Filter</span>
     <div id="filter-group" class="button-group"></div>
-    <div id="insights">
-      <div id="summary" class="label"></div>
-      <div id="bar-chart">
-        <div id="bar-chart-head" class="bar-chart-head"></div>
-        <div id="bar-chart-body" class="bar-chart-body"></div>
-      </div>
-    </div>
+    <div id="summary" class="label"></div>
   </div>
   <div id="plot-wrap">
     <div id="loading">
@@ -676,6 +690,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
     <canvas id="plot"></canvas>
     <svg id="overlay"></svg>
+    <div id="bar-chart" data-corner="top-right">
+      <div id="bar-chart-head" class="bar-chart-head"></div>
+      <div id="bar-chart-body" class="bar-chart-body"></div>
+    </div>
   </div>
   <div id="timeline-bar">
     <div id="timeline-wrap">
@@ -1198,6 +1216,7 @@ function refreshScene({ scene = sceneRows(), syncUrl = true } = {}) {
 function buildBrand() {
   $("#brand-title").textContent = DATA.branding || "embedumap";
   $("#brand-subtitle").textContent = DATA.sourceName || "Standalone map";
+  barChart.dataset.corner = DATA.barChartCorner || "top-right";
 }
 
 function buildColorControls() {

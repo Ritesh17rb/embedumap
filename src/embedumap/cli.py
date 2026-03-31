@@ -38,6 +38,15 @@ def normalize_popup_style(value: str) -> str:
     return style
 
 
+def normalize_bar_chart_corner(value: str) -> str:
+    """Validate the bar-chart corner eagerly for cleaner CLI errors."""
+
+    corner = value.strip().lower()
+    if corner not in {"top-left", "top-right", "bottom-left", "bottom-right"}:
+        raise typer.BadParameter("Bar chart corner must be one of: top-left, top-right, bottom-left, bottom-right")
+    return corner
+
+
 @app.command()
 def run(
     csv_input: str = typer.Argument(..., help="Local CSV path or HTTP(S) URL."),
@@ -54,6 +63,11 @@ def run(
     timeline_column: str | None = typer.Option(None, "--timeline-column", help="Timeline column."),
     branding: str = typer.Option("embedumap", "--branding", help="Brand shown at the top left of the page."),
     opacity: float = typer.Option(1.0, "--opacity", min=0.0, max=1.0, help="Base point opacity."),
+    bar_chart_corner: str = typer.Option(
+        "top-right",
+        "--bar-chart-corner",
+        help="Corner used for the overlay bar chart.",
+    ),
     cluster_columns_raw: list[str] = typer.Option(
         ["embeddings"],
         "--cluster-columns",
@@ -81,6 +95,7 @@ def run(
     """Build the map or validate the plan for it."""
 
     popup_style = normalize_popup_style(popup_style)
+    bar_chart_corner = normalize_bar_chart_corner(bar_chart_corner)
     config = BuildConfig(
         csv_input=csv_input,
         output_path=output_path.expanduser().resolve(),
@@ -95,6 +110,7 @@ def run(
         timeline_column=timeline_column.strip() if timeline_column else None,
         branding=branding.strip() or "embedumap",
         opacity=opacity,
+        bar_chart_corner=bar_chart_corner,
         popup_style=popup_style,
         model=model.strip(),
         cluster_naming_model=cluster_naming_model.strip(),
