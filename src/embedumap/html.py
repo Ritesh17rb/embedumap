@@ -377,6 +377,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     background: rgba(9, 16, 26, 0.96);
   }
 
+  .popup-table th[data-sort] {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .popup-table th.sorted { color: #eff6ff; }
+
   .popup-image-list {
     display: grid;
     gap: 8px;
@@ -435,9 +442,86 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     font-size: 12px;
   }
 
-  #summary {
+  #insights {
     margin-left: auto;
+    display: grid;
+    gap: 8px;
+    min-width: min(360px, 100%);
+    justify-items: end;
+    flex: 1 1 320px;
+  }
+
+  #summary {
     color: var(--text-dim);
+    text-align: right;
+  }
+
+  #bar-chart {
+    width: min(360px, 100%);
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--stroke);
+    border-radius: 14px;
+    background: rgba(11, 18, 32, 0.72);
+  }
+
+  #bar-chart.hidden { display: none; }
+
+  .bar-chart-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .bar-chart-body {
+    display: grid;
+    gap: 5px;
+  }
+
+  .bar-row {
+    display: grid;
+    grid-template-columns: minmax(72px, 1fr) minmax(110px, 1.7fr) auto;
+    gap: 8px;
+    align-items: center;
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  .bar-label,
+  .bar-count {
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .bar-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bar-count {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bar-track {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    min-width: 2px;
+    border-radius: 999px;
+    transition: width 180ms linear, background 180ms linear;
   }
 
   #timeline-wrap {
@@ -543,9 +627,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   @media (max-width: 900px) {
-    #summary {
+    #insights {
       width: 100%;
-      margin-left: 0;
+      justify-items: stretch;
+    }
+
+    #summary {
+      text-align: left;
     }
 
     #timeline-wrap {
@@ -570,7 +658,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="color-group" class="button-group"></div>
     <span class="label">Filter</span>
     <div id="filter-group" class="button-group"></div>
-    <div id="summary" class="label"></div>
+    <div id="insights">
+      <div id="summary" class="label"></div>
+      <div id="bar-chart">
+        <div id="bar-chart-head" class="bar-chart-head"></div>
+        <div id="bar-chart-body" class="bar-chart-body"></div>
+      </div>
+    </div>
   </div>
   <div id="plot-wrap">
     <div id="loading">
@@ -641,6 +735,9 @@ const popupBody = $("#popup-body");
 const popupTitle = $("#popup-title");
 const popupStyleLabel = $("#popup-style-label");
 const summary = $("#summary");
+const barChart = $("#bar-chart");
+const barChartHead = $("#bar-chart-head");
+const barChartBody = d3.select("#bar-chart-body");
 const loading = $("#loading");
 const loadingTitle = $("#loading-title");
 const loadingCopy = $("#loading-copy");
@@ -670,6 +767,8 @@ const TIMELINE_FORMATTERS = {
     timeZone: "UTC",
   }),
 };
+const STATE_DATE = d3.utcFormat("%Y-%m-%d");
+const STATE_DATE_TIME = d3.utcFormat("%Y-%m-%dT%H:%M:%SZ");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -727,15 +826,6 @@ function inTimeline(row) {
   return row.timelineMs >= state.timelineMin && row.timelineMs <= state.timelineMax;
 }
 
-function filteredRows() {
-  return DATA.rows.filter(matchesFilters);
-}
-
-function selectableRows() {
-  if (!DATA.timelineColumn) return filteredRows();
-  return filteredRows().filter((row) => row.timelineMs != null && inTimeline(row));
-}
-
 function colorValue(row) {
   return row.colors[state.colorBy] ?? "(blank)";
 }
@@ -743,6 +833,71 @@ function colorValue(row) {
 function colorScale() {
   const values = [...new Set(DATA.rows.map(colorValue))];
   return d3.scaleOrdinal().domain(values).range(PALETTE);
+}
+
+function sceneRows() {
+  const filtered = DATA.rows.filter(matchesFilters);
+  const selectable = DATA.timelineColumn
+    ? filtered.filter((row) => row.timelineMs != null && inTimeline(row))
+    : filtered;
+  return { filtered, selectable };
+}
+
+function formatTimelineParam(ms) {
+  if (DATA.timelineKind === "year") return String(new Date(ms).getUTCFullYear());
+  if (DATA.timelineKind === "datetime") return STATE_DATE_TIME(new Date(ms));
+  return STATE_DATE(new Date(ms));
+}
+
+function parseTimelineParam(value, fallback) {
+  if (!value) return fallback;
+  if (DATA.timelineKind === "year") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Date.UTC(parsed, 0, 1) : fallback;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function syncUrlState() {
+  if (!DATA) return;
+  const params = new URLSearchParams();
+  const defaultColor = DATA.colorColumns[0] ?? "cluster";
+  if (state.colorBy !== defaultColor) params.set("color", state.colorBy);
+  for (const column of DATA.filterColumns) {
+    if (state.filters[column]) params.set(`filter.${column}`, state.filters[column]);
+  }
+  if (DATA.timelineColumn && DATA.timelineMin != null && DATA.timelineMax != null) {
+    if (Math.abs(state.timelineMin - DATA.timelineMin) > 1) params.set("start", formatTimelineParam(state.timelineMin));
+    if (Math.abs(state.timelineMax - DATA.timelineMax) > 1) params.set("end", formatTimelineParam(state.timelineMax));
+  }
+  if (state.sortColumn !== DATA.defaultSort) params.set("sort", state.sortColumn);
+  if (!state.sortAsc) params.set("dir", "desc");
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
+  window.history.replaceState({}, "", nextUrl);
+}
+
+function applyUrlState() {
+  const params = new URL(window.location.href).searchParams;
+  const color = params.get("color");
+  if (color && DATA.colorColumns.includes(color)) state.colorBy = color;
+  for (const column of DATA.filterColumns) {
+    const value = params.get(`filter.${column}`) ?? "";
+    const allowed = new Set(DATA.rows.map((row) => String(row.filters[column] ?? "")));
+    state.filters[column] = value && allowed.has(value) ? value : "";
+  }
+  if (DATA.timelineColumn && DATA.timelineMin != null && DATA.timelineMax != null) {
+    state.timelineMin = Math.max(DATA.timelineMin, parseTimelineParam(params.get("start"), DATA.timelineMin));
+    state.timelineMax = Math.min(DATA.timelineMax, parseTimelineParam(params.get("end"), DATA.timelineMax));
+    if (state.timelineMin > state.timelineMax) {
+      state.timelineMin = DATA.timelineMin;
+      state.timelineMax = DATA.timelineMax;
+    }
+  }
+  const sortColumn = params.get("sort");
+  if (sortColumn && DATA.sortColumns.includes(sortColumn)) state.sortColumn = sortColumn;
+  state.sortAsc = params.get("dir") !== "desc";
 }
 
 function clearSelectionBox() {
@@ -754,24 +909,76 @@ function hideTooltip() {
   tooltip.style.display = "none";
 }
 
-function updateSummary() {
-  const filtered = filteredRows();
-  const visible = selectableRows();
+function updateSummary(scene) {
+  const filtered = scene.filtered;
+  const visible = scene.selectable;
   summary.textContent = DATA.timelineColumn
     ? `${visible.length} in range / ${filtered.length} filtered / ${DATA.rows.length} total`
     : `${filtered.length} visible / ${DATA.rows.length} total`;
 }
 
-function rebuildSpatialIndex() {
+function rebuildSpatialIndex(scene) {
   quadtree = d3.quadtree()
     .x((row) => xScale(row.x))
     .y((row) => yScale(row.y))
-    .addAll(selectableRows());
+    .addAll(scene.selectable);
 }
 
-function draw() {
+function updateBarChart(scene) {
+  const counts = new Map();
+  for (const row of scene.selectable) {
+    const key = colorValue(row);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const entries = [...counts.entries()]
+    .map(([key, count]) => ({ key, label: String(key), count }))
+    .sort((left, right) => d3.descending(left.count, right.count) || d3.ascending(left.label, right.label))
+    .slice(0, 20);
+
+  barChart.classList.remove("hidden");
+  if (!entries.length) {
+    barChartHead.innerHTML = `<span>Visible by ${escapeHtml(displaySortLabel(state.colorBy))}</span><span>0 categories</span>`;
+    barChartBody.html(`<div class="label">No visible rows</div>`);
+    return;
+  }
+
+  const totalCategories = counts.size;
+  const suffix = totalCategories > entries.length ? `Top ${entries.length} of ${totalCategories}` : `${entries.length} categories`;
+  barChartHead.innerHTML = `<span>Visible by ${escapeHtml(displaySortLabel(state.colorBy))}</span><span>${escapeHtml(suffix)}</span>`;
+  const maxCount = d3.max(entries, (entry) => entry.count) ?? 1;
+  const scale = colorScale();
+  const rows = barChartBody.selectAll(".bar-row").data(entries, (entry) => entry.key);
+  rows.exit()
+    .style("opacity", 0)
+    .style("transform", "translateY(-4px)")
+    .remove();
+
+  const enter = rows.enter()
+    .append("div")
+    .attr("class", "bar-row")
+    .style("opacity", 0)
+    .style("transform", "translateY(-4px)");
+  enter.append("div").attr("class", "bar-label");
+  const track = enter.append("div").attr("class", "bar-track");
+  track.append("div").attr("class", "bar-fill").style("width", "0%");
+  enter.append("div").attr("class", "bar-count");
+
+  const merged = enter.merge(rows)
+    .style("opacity", 1)
+    .style("transform", "translateY(0)");
+  merged.select(".bar-label")
+    .text((entry) => entry.label)
+    .attr("title", (entry) => entry.label);
+  merged.select(".bar-count").text((entry) => entry.count.toLocaleString());
+  merged.select(".bar-fill")
+    .style("background", (entry) => scale(entry.key))
+    .style("width", (entry) => `${Math.max(2, (entry.count / maxCount) * 100)}%`);
+  merged.sort((left, right) => d3.descending(left.count, right.count) || d3.ascending(left.label, right.label));
+}
+
+function draw(scene = sceneRows()) {
   if (!DATA || !state) return;
-  const rows = filteredRows();
+  const rows = scene.filtered;
   const scale = colorScale();
   const selected = state.selectedIds;
   const hasSelection = selected.size > 0;
@@ -804,11 +1011,13 @@ function draw() {
     }
   }
   ctx.globalAlpha = 1;
-  updateSummary();
-  rebuildSpatialIndex();
+  updateSummary(scene);
+  rebuildSpatialIndex(scene);
+  updateBarChart(scene);
 }
 
 function resize() {
+  if (!DATA || !state) return;
   const rect = plot.parentElement.getBoundingClientRect();
   width = rect.width;
   height = rect.height;
@@ -822,7 +1031,7 @@ function resize() {
   xScale = d3.scaleLinear().domain(xDomain).range([margin.left, width - margin.right]);
   yScale = d3.scaleLinear().domain(yDomain).range([height - margin.bottom, margin.top]);
   overlay.attr("width", width).attr("height", height);
-  draw();
+  refreshScene({ syncUrl: false });
 }
 
 function showTooltip(row, event) {
@@ -862,6 +1071,23 @@ function selectedRows() {
   return DATA.rows.filter((row) => state.selectedIds.has(row.id)).sort(comparator);
 }
 
+function syncSortControls() {
+  const select = $("#sort-column");
+  if (select) select.value = state.sortColumn;
+  $("#sort-direction").textContent = state.sortAsc ? "Ascending" : "Descending";
+}
+
+function updateSort(column, toggle = false) {
+  if (toggle && state.sortColumn === column) state.sortAsc = !state.sortAsc;
+  else {
+    state.sortColumn = column;
+    if (toggle) state.sortAsc = true;
+  }
+  syncSortControls();
+  if (state.selectedIds.size) renderPopup();
+  syncUrlState();
+}
+
 function renderImages(row) {
   if (!row.images.length) return "";
   return `<div class="card-images popup-image-list">${row.images.map((url) => (
@@ -897,7 +1123,11 @@ function renderFieldGrid(row, includeInlineMedia = true) {
 }
 
 function renderTable(rows) {
-  const headers = DATA.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+  const headers = DATA.columns.map((column) => {
+    const sorted = state.sortColumn === column;
+    const arrow = sorted ? (state.sortAsc ? " ▲" : " ▼") : "";
+    return `<th data-sort="${escapeHtml(column)}" class="${sorted ? "sorted" : ""}">${escapeHtml(displaySortLabel(column))}${arrow}</th>`;
+  }).join("");
   const body = rows.map((row) => {
     const cells = DATA.columns.map((column) => `<td>${renderMediaForColumn(row, column)}${escapeHtml(row.raw[column] ?? "")}</td>`).join("");
     return `<tr>${cells}</tr>`;
@@ -947,20 +1177,22 @@ function dismissPopup({ clearSelection = true, redraw = true } = {}) {
   if (clearSelection) state.selectedIds = new Set();
   clearSelectionBox();
   hideTooltip();
-  if (redraw) draw();
+  if (redraw) draw(sceneRows());
 }
 
-function syncSelectionToVisible() {
+function syncSelectionToVisible(scene) {
   if (!state.selectedIds.size) return;
-  const allowed = new Set(selectableRows().map((row) => row.id));
+  const allowed = new Set(scene.selectable.map((row) => row.id));
   state.selectedIds = new Set([...state.selectedIds].filter((id) => allowed.has(id)));
 }
 
-function refreshScene() {
-  syncSelectionToVisible();
-  draw();
+function refreshScene({ scene = sceneRows(), syncUrl = true } = {}) {
+  if (!DATA || !state) return;
+  syncSelectionToVisible(scene);
+  draw(scene);
   if (state.selectedIds.size) renderPopup();
   else hidePopupOnly();
+  if (syncUrl) syncUrlState();
 }
 
 function buildBrand() {
@@ -980,7 +1212,7 @@ function buildColorControls() {
     for (const candidate of group.querySelectorAll("button")) {
       candidate.classList.toggle("active", candidate === button);
     }
-    draw();
+    refreshScene();
   });
 }
 
@@ -994,6 +1226,7 @@ function buildFilterControls() {
     return `<select data-filter="${escapeHtml(column)}">${options}</select>`;
   }).join("");
   for (const select of container.querySelectorAll("select")) {
+    select.value = state.filters[select.dataset.filter] ?? "";
     select.addEventListener("change", (event) => {
       state.filters[event.target.dataset.filter] = event.target.value;
       refreshScene();
@@ -1007,14 +1240,23 @@ function buildSortControls() {
     `<option value="${escapeHtml(column)}"${column === state.sortColumn ? " selected" : ""}>${escapeHtml(displaySortLabel(column))}</option>`
   )).join("");
   select.addEventListener("change", (event) => {
-    state.sortColumn = event.target.value;
-    renderPopup();
+    updateSort(event.target.value);
   });
   $("#sort-direction").addEventListener("click", () => {
-    state.sortAsc = !state.sortAsc;
-    $("#sort-direction").textContent = state.sortAsc ? "Ascending" : "Descending";
-    renderPopup();
+    updateSort(state.sortColumn, true);
   });
+  syncSortControls();
+}
+
+function syncControlsFromState() {
+  for (const button of $("#color-group").querySelectorAll("button")) {
+    button.classList.toggle("active", button.dataset.color === state.colorBy);
+  }
+  for (const select of $("#filter-group").querySelectorAll("select")) {
+    select.value = state.filters[select.dataset.filter] ?? "";
+  }
+  syncSortControls();
+  syncTimelineUi();
 }
 
 function syncTimelineUi() {
@@ -1187,12 +1429,13 @@ function handlePointClick(event) {
     return;
   }
   state.selectedIds = new Set([found.id]);
-  draw();
+  draw(sceneRows());
   renderPopup();
 }
 
 function handleBrushSelection(bounds) {
-  const selected = selectableRows()
+  const scene = sceneRows();
+  const selected = scene.selectable
     .filter((row) => {
       const px = xScale(row.x);
       const py = yScale(row.y);
@@ -1201,7 +1444,7 @@ function handleBrushSelection(bounds) {
     .map((row) => row.id);
   state.selectedIds = new Set(selected);
   clearSelectionBox();
-  draw();
+  draw(scene);
   if (selected.length) renderPopup();
   else hidePopupOnly();
 }
@@ -1209,6 +1452,11 @@ function handleBrushSelection(bounds) {
 function bindInteractions() {
   $("#popup-close").addEventListener("click", () => dismissPopup());
   popupBackdrop.addEventListener("click", () => dismissPopup());
+  popupBody.addEventListener("click", (event) => {
+    const header = event.target.closest("th[data-sort]");
+    if (!header || DATA.popupStyle !== "table") return;
+    updateSort(header.dataset.sort, true);
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") dismissPopup();
   });
@@ -1290,6 +1538,7 @@ function boot() {
     };
     globalThis.state = state;
     globalThis.renderPopup = renderPopup;
+    applyUrlState();
 
     popupStyleLabel.textContent = DATA.popupStyle;
     buildBrand();
@@ -1307,6 +1556,7 @@ function boot() {
     buildTimelineControls();
     bindInteractions();
     resize();
+    syncUrlState();
     requestAnimationFrame(() => loading.classList.add("hidden"));
   } catch (error) {
     loadingTitle.textContent = "Failed to load map";
@@ -1317,6 +1567,12 @@ function boot() {
 
 requestAnimationFrame(() => setTimeout(boot, 0));
 window.addEventListener("resize", resize);
+window.addEventListener("popstate", () => {
+  if (!DATA || !state) return;
+  applyUrlState();
+  syncControlsFromState();
+  refreshScene({ syncUrl: false });
+});
 </script>
 </body>
 </html>

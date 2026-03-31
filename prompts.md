@@ -151,5 +151,9 @@ Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you 
 Modify the HTML to:
 
 - Make the state (filters, time range, color, etc.) bookmarkable and shareable. See reference implementations
+- Include the bar chart with the bars based on the chosen "color" (limited to max 20 categories for readability). See reference implementations. When the timeline plays or any filters are updated, the bar chart should update. When the timeline plays, use smooth animations.
+- Clicking on the column header in the popup should toggle the sort by that column.
+
+Implement it and test it EFFICIENTLY. Use sub-agents as required. Commit as you go (including prompts.md which I'm editing).
 
 <!-- codex --yolo --model gpt-5.4 --config model_reasoning_effort=xhigh resume 019d3df6-1192-7b01-be69-3b5f2a092a92 -->
