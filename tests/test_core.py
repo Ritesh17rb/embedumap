@@ -62,6 +62,7 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         dimensions=768,
         sample=None,
         dry_run=False,
+        centroid_trails=False,
     )
 
     class Record:

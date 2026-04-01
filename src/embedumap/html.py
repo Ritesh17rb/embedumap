@@ -731,6 +731,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="color-group" class="button-group"></div>
     <span class="label">Filter</span>
     <div id="filter-group" class="button-group"></div>
+    <div id="trails-group" class="button-group" style="display:none">
+      <button id="trails-toggle">Trails</button>
+    </div>
     <div id="status-stack">
       <div id="summary" class="label"></div>
       <div id="axis-legend" aria-label="Projection axes">
@@ -952,6 +955,7 @@ function syncUrlState() {
   }
   if (state.sortColumn !== DATA.defaultSort) params.set("sort", state.sortColumn);
   if (!state.sortAsc) params.set("dir", "desc");
+  if (DATA.centroidTrails && Object.keys(DATA.centroidTrails).length && !state.showTrails) params.set("trails", "off");
   const query = params.toString();
   const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
   window.history.replaceState({}, "", nextUrl);
@@ -977,6 +981,8 @@ function applyUrlState() {
   const sortColumn = params.get("sort");
   if (sortColumn && DATA.sortColumns.includes(sortColumn)) state.sortColumn = sortColumn;
   state.sortAsc = params.get("dir") !== "desc";
+  if (params.get("trails") === "off") state.showTrails = false;
+  else if (params.get("trails") === "on") state.showTrails = true;
 }
 
 function clearSelectionBox() {
@@ -1055,13 +1061,98 @@ function updateBarChart(scene) {
   merged.sort((left, right) => d3.descending(left.count, right.count) || d3.ascending(left.label, right.label));
 }
 
+function activeTrails() {
+  if (!DATA.centroidTrails) return [];
+  return DATA.centroidTrails[state.colorBy] || DATA.centroidTrails["cluster"] || [];
+}
+
+function drawTrails(ctx) {
+  const trails = activeTrails();
+  if (!state.showTrails || !trails.length) return;
+  const scale = colorScale();
+  const highlight = state.highlightTrailCluster;
+
+  for (const trail of trails) {
+    const pts = trail.points;
+    if (pts.length < 2) continue;
+
+    const isHighlighted = highlight == null || highlight === trail.groupId;
+    const trailAlpha = isHighlighted ? 0.9 : 0.12;
+    const lineWidth = isHighlighted ? 2.5 : 1.2;
+    const groupLabel = trail.groupLabel;
+    const color = scale(groupLabel);
+
+    // Draw polyline
+    ctx.save();
+    ctx.globalAlpha = trailAlpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(xScale(pts[0].x), yScale(pts[0].y));
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(xScale(pts[i].x), yScale(pts[i].y));
+    }
+    ctx.stroke();
+
+    // Draw arrows along the path
+    if (isHighlighted) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const x1 = xScale(pts[i].x), y1 = yScale(pts[i].y);
+        const x2 = xScale(pts[i + 1].x), y2 = yScale(pts[i + 1].y);
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const arrowLen = 6;
+        ctx.beginPath();
+        ctx.moveTo(mx - arrowLen * Math.cos(angle - 0.45), my - arrowLen * Math.sin(angle - 0.45));
+        ctx.lineTo(mx, my);
+        ctx.lineTo(mx - arrowLen * Math.cos(angle + 0.45), my - arrowLen * Math.sin(angle + 0.45));
+        ctx.stroke();
+      }
+    }
+
+    // Draw centroid dots
+    for (let i = 0; i < pts.length; i++) {
+      const px = xScale(pts[i].x), py = yScale(pts[i].y);
+      const r = isHighlighted ? 5 : 3;
+      // Gradient: older = more transparent, newer = more opaque
+      const ageFactor = pts.length > 1 ? i / (pts.length - 1) : 1;
+      ctx.globalAlpha = trailAlpha * (0.4 + 0.6 * ageFactor);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.8)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Draw time labels at start and end
+    if (isHighlighted && pts.length >= 2) {
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "#e2e8f0";
+      ctx.font = "bold 10px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(pts[0].timeLabel, xScale(pts[0].x), yScale(pts[0].y) - 8);
+      ctx.textBaseline = "top";
+      ctx.fillText(pts[pts.length - 1].timeLabel, xScale(pts[pts.length - 1].x), yScale(pts[pts.length - 1].y) + 8);
+    }
+
+    ctx.restore();
+  }
+}
+
 function draw(scene = sceneRows()) {
   if (!DATA || !state) return;
   const rows = scene.filtered;
   const scale = colorScale();
   const selected = state.selectedIds;
   const hasSelection = selected.size > 0;
+  const trailsOn = state.showTrails && activeTrails().length;
   const baseOpacity = Math.max(0, Math.min(1, DATA.opacity ?? 1));
+  const pointOpacity = trailsOn ? baseOpacity * 0.4 : baseOpacity;
   const ctx = plot.getContext("2d");
   ctx.clearRect(0, 0, width, height);
 
@@ -1069,10 +1160,10 @@ function draw(scene = sceneRows()) {
     for (const row of rows) {
       const active = inTimeline(row) || !DATA.timelineColumn;
       const chosen = selected.has(row.id);
-      let alpha = active ? baseOpacity : Math.max(0.03, baseOpacity * 0.12);
-      if (hasSelection && !chosen) alpha = active ? Math.max(0.05, baseOpacity * 0.16) : Math.max(0.02, baseOpacity * 0.06);
+      let alpha = active ? pointOpacity : Math.max(0.03, pointOpacity * 0.12);
+      if (hasSelection && !chosen) alpha = active ? Math.max(0.05, pointOpacity * 0.16) : Math.max(0.02, pointOpacity * 0.06);
       if (hasSelection && chosen) alpha = baseOpacity;
-      const bright = alpha >= Math.max(0.25, baseOpacity * 0.45);
+      const bright = alpha >= Math.max(0.25, pointOpacity * 0.45);
       if (pass === 0 && bright) continue;
       if (pass === 1 && !bright) continue;
 
@@ -1089,6 +1180,10 @@ function draw(scene = sceneRows()) {
       }
     }
   }
+
+  // Draw centroid trails on top of points
+  drawTrails(ctx);
+
   ctx.globalAlpha = 1;
   updateSummary(scene);
   rebuildSpatialIndex(scene);
@@ -1291,6 +1386,7 @@ function buildColorControls() {
     const button = event.target.closest("[data-color]");
     if (!button) return;
     state.colorBy = button.dataset.color;
+    state.highlightTrailCluster = null;
     for (const candidate of group.querySelectorAll("button")) {
       candidate.classList.toggle("active", candidate === button);
     }
@@ -1531,6 +1627,39 @@ function handleBrushSelection(bounds) {
   else hidePopupOnly();
 }
 
+function buildTrailsControls() {
+  if (!DATA.centroidTrails || !Object.keys(DATA.centroidTrails).length) return;
+  const group = $("#trails-group");
+  group.style.display = "";
+  const btn = $("#trails-toggle");
+  btn.classList.toggle("active", state.showTrails);
+  btn.addEventListener("click", () => {
+    state.showTrails = !state.showTrails;
+    btn.classList.toggle("active", state.showTrails);
+    if (!state.showTrails) state.highlightTrailCluster = null;
+    refreshScene();
+  });
+
+  // Click on bar chart rows to highlight individual trails
+  barChartBody.node().addEventListener("click", (event) => {
+    if (!state.showTrails) return;
+    const trails = activeTrails();
+    if (!trails.length) return;
+    const row = event.target.closest(".bar-row");
+    if (!row) return;
+    const datum = d3.select(row).datum();
+    if (!datum) return;
+    const trail = trails.find((t) => t.groupLabel === datum.key);
+    if (!trail) return;
+    if (state.highlightTrailCluster === trail.groupId) {
+      state.highlightTrailCluster = null;
+    } else {
+      state.highlightTrailCluster = trail.groupId;
+    }
+    refreshScene();
+  });
+}
+
 function bindInteractions() {
   $("#popup-close").addEventListener("click", () => dismissPopup());
   popupBackdrop.addEventListener("click", () => dismissPopup());
@@ -1617,6 +1746,8 @@ function boot() {
       timelineMin: DATA.timelineMin,
       timelineMax: DATA.timelineMax,
       playing: false,
+      showTrails: !!(DATA.centroidTrails && Object.keys(DATA.centroidTrails).length),
+      highlightTrailCluster: null,
     };
     globalThis.state = state;
     globalThis.renderPopup = renderPopup;
@@ -1636,6 +1767,7 @@ function boot() {
     buildFilterControls();
     buildSortControls();
     buildTimelineControls();
+    buildTrailsControls();
     bindInteractions();
     resize();
     syncUrlState();

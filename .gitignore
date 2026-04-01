@@ -6,3 +6,10 @@ build/
 __pycache__/
 index.html
 embedumap.duckdb*
+bigquery*
+meeting*
+plan*
+*ritesh*
+report*
+settings.json
+patents.csv

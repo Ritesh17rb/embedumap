@@ -95,6 +95,7 @@ def run(
     dimensions: int = typer.Option(DEFAULT_DIMENSIONS, "--dimensions", min=128, help="Embedding dimensionality."),
     sample: int | None = typer.Option(None, "--sample", min=1, help="Sample N rows before building."),
     output_path: Path = typer.Option(Path("index.html"), "--output", help="Where to write the HTML output."),
+    centroid_trails: bool = typer.Option(False, "--centroid-trails", help="Show centroid movement trails over time."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate inputs without embedding or writing HTML."),
 ) -> None:
     """Build the map or validate the plan for it."""
@@ -124,6 +125,7 @@ def run(
         dimensions=dimensions,
         sample=sample,
         dry_run=dry_run,
+        centroid_trails=centroid_trails,
     )
     if not config.embedding_columns and not config.image_columns and not config.audio_columns:
         raise typer.BadParameter(

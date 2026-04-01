@@ -84,6 +84,7 @@ class BuildConfig:
     dimensions: int
     sample: int | None
     dry_run: bool
+    centroid_trails: bool
 
 
 @dataclass(slots=True)
@@ -739,6 +740,11 @@ def embed_records(source: CsvSource, records: list[RowRecord], config: BuildConf
         batch_range = f"{batch_indices[0] + 1}-{batch_indices[-1] + 1}"
         console.print(f"Embedding uncached rows {batch_range} of {len(records)}...")
         contents = [build_content(record) for record in batch]
+        # Proactive delay between batches to respect free-tier per-minute limits
+        if start > 0:
+            import time
+
+            time.sleep(5)
         delay = 4
         for attempt in range(6):
             try:
@@ -755,10 +761,11 @@ def embed_records(source: CsvSource, records: list[RowRecord], config: BuildConf
 
                 time.sleep(delay)
                 delay = min(delay * 2, 120)
+        batch_rows_to_store = []
         for idx, vector in zip(batch_indices, batch_vectors, strict=True):
             vectors[idx] = vector
             cache_key, content_hash = cache_entries[idx]
-            rows_to_store.append(
+            batch_rows_to_store.append(
                 (
                     cache_key,
                     source.label,
@@ -769,9 +776,9 @@ def embed_records(source: CsvSource, records: list[RowRecord], config: BuildConf
                     vector.astype(np.float32).tobytes(),
                 )
             )
-
-    with with_cache(cache_path) as connection:
-        store_cached_vectors(connection, rows_to_store)
+        # Flush each batch to cache immediately so progress survives failures
+        with with_cache(cache_path) as connection:
+            store_cached_vectors(connection, batch_rows_to_store)
     return vectors
 
 
@@ -1380,6 +1387,110 @@ def analyze_records(
     return coords, cluster_ids, cluster_labels, axis_labels
 
 
+MIN_CENTROID_BUCKET_SIZE = 3
+
+
+def compute_centroid_trails(
+    rows: list[dict[str, object]],
+    cluster_labels: dict[int, str],
+    timeline_kind_value: str | None,
+    filter_columns: list[str] | None = None,
+) -> dict[str, list[dict[str, object]]] | None:
+    """Compute centroid trails per group per time bucket.
+
+    Computes trails for clusters and for each filter column value.
+    Returns a dict keyed by group type ("cluster", "category", etc.)
+    mapping to lists of trail objects.  Returns *None* when timeline
+    data is missing or insufficient.
+    """
+
+    timed = [r for r in rows if r["timelineMs"] is not None]
+    if len(timed) < MIN_CENTROID_BUCKET_SIZE:
+        return None
+
+    result: dict[str, list[dict[str, object]]] = {}
+
+    # Cluster trails
+    cluster_trails = _trails_for_group(
+        timed, timeline_kind_value,
+        group_fn=lambda r: r["clusterId"],
+        label_fn=lambda gid: cluster_labels.get(gid, str(gid)),
+    )
+    if cluster_trails:
+        result["cluster"] = cluster_trails
+
+    # Filter column trails (e.g., category, year)
+    for column in (filter_columns or []):
+        if column == "cluster":
+            continue
+        col_trails = _trails_for_group(
+            timed, timeline_kind_value,
+            group_fn=lambda r, c=column: r["filters"].get(c, "(blank)"),
+            label_fn=lambda gid: str(gid),
+        )
+        if col_trails:
+            result[column] = col_trails
+
+    return result if result else None
+
+
+def _trails_for_group(
+    timed_rows: list[dict],
+    timeline_kind_value: str | None,
+    group_fn,
+    label_fn,
+) -> list[dict[str, object]]:
+    """Build centroid trails for an arbitrary grouping function."""
+
+    buckets: dict[tuple, list[dict]] = {}
+    for r in timed_rows:
+        gid = group_fn(r)
+        bucket = _time_bucket(r["timelineMs"], timeline_kind_value)
+        buckets.setdefault((gid, bucket), []).append(r)
+
+    group_ids = sorted(set(group_fn(r) for r in timed_rows), key=str)
+    trails = []
+    for gid in group_ids:
+        points = []
+        group_buckets = sorted(
+            ((bucket, rlist) for (g, bucket), rlist in buckets.items() if g == gid),
+            key=lambda x: x[0],
+        )
+        for bucket, rlist in group_buckets:
+            if len(rlist) < MIN_CENTROID_BUCKET_SIZE:
+                continue
+            cx = sum(r["x"] for r in rlist) / len(rlist)
+            cy = sum(r["y"] for r in rlist) / len(rlist)
+            points.append({
+                "time": bucket,
+                "timeLabel": _bucket_label(bucket, timeline_kind_value),
+                "x": round(cx, 6),
+                "y": round(cy, 6),
+                "count": len(rlist),
+            })
+        if len(points) >= 2:
+            trails.append({
+                "groupId": str(gid),
+                "groupLabel": label_fn(gid),
+                "points": points,
+            })
+    return trails
+
+
+def _time_bucket(ms: int, kind: str | None) -> int:
+    """Map a UTC-ms timestamp to a discrete time bucket (year integer)."""
+    dt = datetime.fromtimestamp(ms / 1000, tz=UTC)
+    if kind == "year":
+        return dt.year
+    # For date/datetime, bucket by year as well (could be made finer later)
+    return dt.year
+
+
+def _bucket_label(bucket: int, kind: str | None) -> str:
+    """Human-readable label for a time bucket."""
+    return str(bucket)
+
+
 def build_payload(
     source: CsvSource,
     config: BuildConfig,
@@ -1467,4 +1578,5 @@ def build_payload(
         "rows": rows,
         "xDomain": [round(float(min(x_values)), 6), round(float(max(x_values)), 6)],
         "yDomain": [round(float(min(y_values)), 6), round(float(max(y_values)), 6)],
+        "centroidTrails": compute_centroid_trails(rows, cluster_labels, timeline_kind_value, filter_columns) if config.centroid_trails else None,
     }
