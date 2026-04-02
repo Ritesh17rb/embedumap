@@ -4,7 +4,6 @@
 .ruff_cache/
 build/
 __pycache__/
-index.html
 embedumap.duckdb*
 bigquery*
 meeting*
@@ -13,3 +12,6 @@ plan*
 report*
 settings.json
 patents.csv
+image.png
+patents-map.html
+stackoverflow.csv
