@@ -10,7 +10,10 @@ import pandas as pd
 from embedumap.core import (
     BuildConfig,
     CsvSource,
+    _bucket_label,
+    _time_bucket,
     build_payload,
+    compute_centroid_trails,
     default_cache_path,
     direct_cluster_labels,
     split_option_values,
@@ -99,3 +102,37 @@ def test_build_payload_includes_popup_sort_columns() -> None:
 def test_default_cache_path_tracks_output_directory() -> None:
     output_path = Path("/tmp/embedumap/output/index.html")
     assert default_cache_path(output_path) == Path("/tmp/embedumap/output/embedumap.duckdb")
+
+
+def test_time_bucket_supports_year_month_and_day_granularity() -> None:
+    ms = 1706834700000  # 2024-02-02 UTC
+    assert _time_bucket(ms, "year") == 2024
+    assert _time_bucket(ms, "datetime") == (2024, 2)
+    assert _time_bucket(ms, "date") == (2024, 2, 2)
+    assert _bucket_label((2024, 2), "datetime") == "2024-02"
+    assert _bucket_label((2024, 2, 2), "date") == "2024-02-02"
+
+
+def test_compute_centroid_trails_includes_count_std_and_filter_groups() -> None:
+    rows = [
+        {"timelineMs": 1704067200000, "clusterId": 0, "x": 0.0, "y": 0.0, "filters": {"category": "A"}},
+        {"timelineMs": 1704067200000, "clusterId": 0, "x": 1.0, "y": 0.0, "filters": {"category": "A"}},
+        {"timelineMs": 1704067200000, "clusterId": 0, "x": 0.0, "y": 1.0, "filters": {"category": "A"}},
+        {"timelineMs": 1706745600000, "clusterId": 0, "x": 2.0, "y": 2.0, "filters": {"category": "A"}},
+        {"timelineMs": 1706745600000, "clusterId": 0, "x": 3.0, "y": 2.0, "filters": {"category": "A"}},
+        {"timelineMs": 1706745600000, "clusterId": 0, "x": 2.0, "y": 3.0, "filters": {"category": "A"}},
+    ]
+
+    trails = compute_centroid_trails(rows, {0: "Cluster 1"}, "datetime", ["category"])
+
+    assert sorted(trails) == ["category", "cluster"]
+    assert trails["cluster"][0]["groupLabel"] == "Cluster 1"
+    assert trails["category"][0]["groupLabel"] == "A"
+    assert trails["cluster"][0]["points"][0] == {
+        "time": (2024, 1),
+        "timeLabel": "2024-01",
+        "x": 0.333333,
+        "y": 0.333333,
+        "count": 3,
+        "std": 0.666667,
+    }

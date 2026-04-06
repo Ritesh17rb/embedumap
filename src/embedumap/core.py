@@ -685,7 +685,7 @@ def gemini_client() -> genai.Client:
 
 
 @retry(
-    retry=retry_if_exception_type(genai_errors.ServerError),
+    retry=retry_if_exception_type((genai_errors.ServerError, httpx.TransportError)),
     wait=wait_exponential(multiplier=2, min=2, max=60),
     stop=stop_after_attempt(6),
     reraise=True,
@@ -1461,12 +1461,14 @@ def _trails_for_group(
                 continue
             cx = sum(r["x"] for r in rlist) / len(rlist)
             cy = sum(r["y"] for r in rlist) / len(rlist)
+            std = (sum((r["x"] - cx) ** 2 + (r["y"] - cy) ** 2 for r in rlist) / len(rlist)) ** 0.5
             points.append({
                 "time": bucket,
                 "timeLabel": _bucket_label(bucket, timeline_kind_value),
                 "x": round(cx, 6),
                 "y": round(cy, 6),
                 "count": len(rlist),
+                "std": round(std, 6),
             })
         if len(points) >= 2:
             trails.append({
@@ -1477,17 +1479,23 @@ def _trails_for_group(
     return trails
 
 
-def _time_bucket(ms: int, kind: str | None) -> int:
-    """Map a UTC-ms timestamp to a discrete time bucket (year integer)."""
+def _time_bucket(ms: int, kind: str | None) -> int | tuple[int, int] | tuple[int, int, int]:
+    """Map a UTC-ms timestamp to a discrete time bucket."""
     dt = datetime.fromtimestamp(ms / 1000, tz=UTC)
     if kind == "year":
         return dt.year
-    # For date/datetime, bucket by year as well (could be made finer later)
-    return dt.year
+    if kind == "date":
+        return (dt.year, dt.month, dt.day)
+    # datetime or unknown — bucket by month
+    return (dt.year, dt.month)
 
 
-def _bucket_label(bucket: int, kind: str | None) -> str:
+def _bucket_label(bucket: int | tuple, kind: str | None) -> str:
     """Human-readable label for a time bucket."""
+    if isinstance(bucket, tuple):
+        if len(bucket) == 3:
+            return f"{bucket[0]}-{bucket[1]:02d}-{bucket[2]:02d}"
+        return f"{bucket[0]}-{bucket[1]:02d}"
     return str(bucket)
 
 

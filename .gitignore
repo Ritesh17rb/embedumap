@@ -14,3 +14,15 @@ patents.csv
 image.png
 patents-map.html
 stackoverflow.csv
+
+# Local datasets and generated map outputs
+gitcommit.csv
+github-real-clean-map.html
+github_real.csv
+github_real_clean.csv
+hackernews-map.html
+hackernews-new-map.html
+hackernews.csv
+hackernews_new.csv
+patents_new.csv
+stackoverflow-map.html

@@ -830,12 +830,15 @@ let height = 0;
 let dpr = window.devicePixelRatio || 1;
 let xScale = d3.scaleLinear();
 let yScale = d3.scaleLinear();
+let baseXScale = d3.scaleLinear();
+let baseYScale = d3.scaleLinear();
 let xDomain = [0, 1];
 let yDomain = [0, 1];
 let quadtree = null;
 let dragState = null;
 let playRaf = 0;
 let playPrev = null;
+let zoomTransform = d3.zoomIdentity;
 
 const TIMELINE_FORMATTERS = {
   year: new Intl.DateTimeFormat(undefined, { year: "numeric", timeZone: "UTC" }),
@@ -955,7 +958,7 @@ function syncUrlState() {
   }
   if (state.sortColumn !== DATA.defaultSort) params.set("sort", state.sortColumn);
   if (!state.sortAsc) params.set("dir", "desc");
-  if (DATA.centroidTrails && Object.keys(DATA.centroidTrails).length && !state.showTrails) params.set("trails", "off");
+  if (DATA.centroidTrails && Object.keys(DATA.centroidTrails).length && state.trailMode !== "both") params.set("trails", state.trailMode);
   const query = params.toString();
   const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}`;
   window.history.replaceState({}, "", nextUrl);
@@ -981,8 +984,8 @@ function applyUrlState() {
   const sortColumn = params.get("sort");
   if (sortColumn && DATA.sortColumns.includes(sortColumn)) state.sortColumn = sortColumn;
   state.sortAsc = params.get("dir") !== "desc";
-  if (params.get("trails") === "off") state.showTrails = false;
-  else if (params.get("trails") === "on") state.showTrails = true;
+  const trailParam = params.get("trails");
+  if (trailParam && ["both", "trails", "nodes"].includes(trailParam)) state.trailMode = trailParam;
 }
 
 function clearSelectionBox() {
@@ -992,6 +995,11 @@ function clearSelectionBox() {
 
 function hideTooltip() {
   tooltip.style.display = "none";
+}
+
+function syncPlotScales() {
+  xScale = zoomTransform.rescaleX(baseXScale);
+  yScale = zoomTransform.rescaleY(baseYScale);
 }
 
 function updateSummary(scene) {
@@ -1066,69 +1074,98 @@ function activeTrails() {
   return DATA.centroidTrails[state.colorBy] || DATA.centroidTrails["cluster"] || [];
 }
 
+let trailDots = [];
+
+function showTrailLines() {
+  return state.trailMode !== "nodes";
+}
+
+function showTrailNodes() {
+  return state.trailMode !== "trails";
+}
+
+function trailRange(key) {
+  let min = Infinity, max = 0;
+  for (const t of activeTrails()) for (const p of t.points) { min = Math.min(min, p[key] ?? 0); max = Math.max(max, p[key] ?? 0); }
+  return { min, max: max || 1 };
+}
+
 function drawTrails(ctx) {
+  trailDots = [];
   const trails = activeTrails();
-  if (!state.showTrails || !trails.length) return;
+  if (!trails.length) return;
   const scale = colorScale();
   const highlight = state.highlightTrailCluster;
+  const filterVal = state.filters[state.colorBy];
+  const { min: cMin, max: cMax } = trailRange("count");
+  const { min: sMin, max: sMax } = trailRange("std");
 
   for (const trail of trails) {
     const pts = trail.points;
     if (pts.length < 2) continue;
 
-    const isHighlighted = highlight == null || highlight === trail.groupId;
-    const trailAlpha = isHighlighted ? 0.9 : 0.12;
-    const lineWidth = isHighlighted ? 2.5 : 1.2;
-    const groupLabel = trail.groupLabel;
-    const color = scale(groupLabel);
+    const filtered = filterVal && trail.groupLabel !== filterVal;
+    const isHighlighted = !filtered && (highlight == null || highlight === trail.groupId);
+    const trailAlpha = filtered ? 0.06 : (isHighlighted ? 0.9 : 0.12);
+    const color = scale(trail.groupLabel);
 
-    // Draw polyline
     ctx.save();
-    ctx.globalAlpha = trailAlpha;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(xScale(pts[0].x), yScale(pts[0].y));
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(xScale(pts[i].x), yScale(pts[i].y));
+    if (showTrailLines()) {
+      ctx.globalAlpha = trailAlpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(xScale(pts[0].x), yScale(pts[0].y));
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(xScale(pts[i].x), yScale(pts[i].y));
+      ctx.stroke();
     }
-    ctx.stroke();
 
-    // Draw arrows along the path
-    if (isHighlighted) {
+    if (showTrailLines() && isHighlighted) {
       for (let i = 0; i < pts.length - 1; i++) {
         const x1 = xScale(pts[i].x), y1 = yScale(pts[i].y);
         const x2 = xScale(pts[i + 1].x), y2 = yScale(pts[i + 1].y);
         const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
         const angle = Math.atan2(y2 - y1, x2 - x1);
-        const arrowLen = 6;
         ctx.beginPath();
-        ctx.moveTo(mx - arrowLen * Math.cos(angle - 0.45), my - arrowLen * Math.sin(angle - 0.45));
+        ctx.moveTo(mx - 6 * Math.cos(angle - 0.45), my - 6 * Math.sin(angle - 0.45));
         ctx.lineTo(mx, my);
-        ctx.lineTo(mx - arrowLen * Math.cos(angle + 0.45), my - arrowLen * Math.sin(angle + 0.45));
+        ctx.lineTo(mx - 6 * Math.cos(angle + 0.45), my - 6 * Math.sin(angle + 0.45));
         ctx.stroke();
       }
     }
 
-    // Draw centroid dots
-    for (let i = 0; i < pts.length; i++) {
-      const px = xScale(pts[i].x), py = yScale(pts[i].y);
-      const r = isHighlighted ? 5 : 3;
-      // Gradient: older = more transparent, newer = more opaque
-      const ageFactor = pts.length > 1 ? i / (pts.length - 1) : 1;
-      ctx.globalAlpha = trailAlpha * (0.4 + 0.6 * ageFactor);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.8)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    if (showTrailNodes()) {
+      for (let i = 0; i < pts.length; i++) {
+        const px = xScale(pts[i].x), py = yScale(pts[i].y);
+        const countNorm = cMax > cMin ? (pts[i].count - cMin) / (cMax - cMin) : 0.5;
+        const baseR = isHighlighted ? 5 : 3;
+        const r = baseR + countNorm * baseR;
+        const ageFactor = pts.length > 1 ? i / (pts.length - 1) : 1;
+        ctx.globalAlpha = trailAlpha * (0.4 + 0.6 * ageFactor);
+
+        const stdNorm = sMax > sMin ? ((pts[i].std ?? 0) - sMin) / (sMax - sMin) : 0;
+        const blur = r + stdNorm * r * 2;
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, blur);
+        grad.addColorStop(0, color);
+        grad.addColorStop(stdNorm < 0.3 ? 0.7 : 0.4, color);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, blur, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        trailDots.push({ px, py, r: Math.max(r, blur), trail, pt: pts[i] });
+      }
     }
 
-    // Draw time labels at start and end
     if (isHighlighted && pts.length >= 2) {
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = "#e2e8f0";
@@ -1150,7 +1187,7 @@ function draw(scene = sceneRows()) {
   const scale = colorScale();
   const selected = state.selectedIds;
   const hasSelection = selected.size > 0;
-  const trailsOn = state.showTrails && activeTrails().length;
+  const trailsOn = activeTrails().length;
   const baseOpacity = Math.max(0, Math.min(1, DATA.opacity ?? 1));
   const pointOpacity = trailsOn ? baseOpacity * 0.4 : baseOpacity;
   const ctx = plot.getContext("2d");
@@ -1190,6 +1227,12 @@ function draw(scene = sceneRows()) {
   updateBarChart(scene);
 }
 
+function resetZoom() {
+  zoomTransform = d3.zoomIdentity;
+  syncPlotScales();
+  refreshScene({ syncUrl: false });
+}
+
 function resize() {
   if (!DATA || !state) return;
   const rect = plot.parentElement.getBoundingClientRect();
@@ -1202,8 +1245,9 @@ function resize() {
   plot.style.height = `${height}px`;
   const ctx = plot.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  xScale = d3.scaleLinear().domain(xDomain).range([margin.left, width - margin.right]);
-  yScale = d3.scaleLinear().domain(yDomain).range([height - margin.bottom, margin.top]);
+  baseXScale = d3.scaleLinear().domain(xDomain).range([margin.left, width - margin.right]);
+  baseYScale = d3.scaleLinear().domain(yDomain).range([height - margin.bottom, margin.top]);
+  syncPlotScales();
   overlay.attr("width", width).attr("height", height);
   refreshScene({ syncUrl: false });
 }
@@ -1627,22 +1671,27 @@ function handleBrushSelection(bounds) {
   else hidePopupOnly();
 }
 
+const TRAIL_MODES = ["both", "trails", "nodes"];
+const TRAIL_LABELS = { both: "Trails + Nodes", trails: "Trails Only", nodes: "Nodes Only" };
+
 function buildTrailsControls() {
   if (!DATA.centroidTrails || !Object.keys(DATA.centroidTrails).length) return;
   const group = $("#trails-group");
   group.style.display = "";
   const btn = $("#trails-toggle");
-  btn.classList.toggle("active", state.showTrails);
+  btn.textContent = TRAIL_LABELS[state.trailMode];
+  btn.classList.add("active");
   btn.addEventListener("click", () => {
-    state.showTrails = !state.showTrails;
-    btn.classList.toggle("active", state.showTrails);
-    if (!state.showTrails) state.highlightTrailCluster = null;
+    const idx = (TRAIL_MODES.indexOf(state.trailMode) + 1) % TRAIL_MODES.length;
+    state.trailMode = TRAIL_MODES[idx];
+    btn.textContent = TRAIL_LABELS[state.trailMode];
+    if (state.trailMode === "nodes") state.highlightTrailCluster = null;
     refreshScene();
   });
 
   // Click on bar chart rows to highlight individual trails
   barChartBody.node().addEventListener("click", (event) => {
-    if (!state.showTrails) return;
+    if (!showTrailLines()) return;
     const trails = activeTrails();
     if (!trails.length) return;
     const row = event.target.closest(".bar-row");
@@ -1661,6 +1710,22 @@ function buildTrailsControls() {
 }
 
 function bindInteractions() {
+  const zoomBehavior = d3.zoom()
+    .scaleExtent([1, 20])
+    .filter((event) => !state.playing && (
+      event.type === "wheel"
+      || (event.type === "mousedown" && event.shiftKey && event.button === 0)
+      || event.type === "touchstart"
+    ))
+    .on("zoom", (event) => {
+      zoomTransform = event.transform;
+      syncPlotScales();
+      clearSelectionBox();
+      hideTooltip();
+      refreshScene({ syncUrl: false });
+    });
+  overlay.call(zoomBehavior).on("dblclick.zoom", null);
+
   $("#popup-close").addEventListener("click", () => dismissPopup());
   popupBackdrop.addEventListener("click", () => dismissPopup());
   popupBody.addEventListener("click", (event) => {
@@ -1670,10 +1735,13 @@ function bindInteractions() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") dismissPopup();
+    if (event.key === "0") {
+      overlay.call(zoomBehavior.transform, d3.zoomIdentity);
+    }
   });
 
   overlayNode.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || state.playing) return;
+    if (event.button !== 0 || state.playing || event.shiftKey) return;
     const { x, y } = pointerPosition(event);
     dragState = { startX: x, startY: y, currentX: x, currentY: y, moved: false };
     overlayNode.setPointerCapture?.(event.pointerId);
@@ -1689,11 +1757,28 @@ function bindInteractions() {
       if (dragState.moved) updateSelectionBox();
       return;
     }
-    if (!quadtree || state.playing || event.buttons > 0) {
+    if (state.playing || event.buttons > 0) {
       hideTooltip();
       return;
     }
     const { x, y } = pointerPosition(event);
+
+    // Check centroid trail dots first
+    const hitDot = trailDots.find((d) => Math.hypot(d.px - x, d.py - y) <= d.r + 4);
+    if (hitDot) {
+      tooltip.innerHTML = `<div class="tooltip-label">${escapeHtml(hitDot.trail.groupLabel)}</div>`
+        + `<div class="tooltip-grid">`
+        + `<div class="tooltip-key">Period</div><div class="tooltip-value">${escapeHtml(hitDot.pt.timeLabel)}</div>`
+        + `<div class="tooltip-key">Points</div><div class="tooltip-value">${hitDot.pt.count.toLocaleString()}</div>`
+        + `<div class="tooltip-key">Spread</div><div class="tooltip-value">${(hitDot.pt.std ?? 0).toFixed(3)}</div>`
+        + `</div>`;
+      tooltip.style.display = "block";
+      tooltip.style.left = `${Math.min(window.innerWidth - 180, event.clientX + 14)}px`;
+      tooltip.style.top = `${Math.min(window.innerHeight - 100, event.clientY + 14)}px`;
+      return;
+    }
+
+    if (!quadtree) { hideTooltip(); return; }
     const found = quadtree.find(x, y, 12);
     if (!found) {
       hideTooltip();
@@ -1746,7 +1831,7 @@ function boot() {
       timelineMin: DATA.timelineMin,
       timelineMax: DATA.timelineMax,
       playing: false,
-      showTrails: !!(DATA.centroidTrails && Object.keys(DATA.centroidTrails).length),
+      trailMode: "both",
       highlightTrailCluster: null,
     };
     globalThis.state = state;
