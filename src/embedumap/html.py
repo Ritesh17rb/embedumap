@@ -734,6 +734,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="trails-group" class="button-group" style="display:none">
       <button id="trails-toggle">Trails</button>
     </div>
+    <div id="page-switch-group" class="button-group" style="display:none"></div>
     <div id="status-stack">
       <div id="summary" class="label"></div>
       <div id="axis-legend" aria-label="Projection axes">
@@ -1011,6 +1012,10 @@ function updateSummary(scene) {
 }
 
 function rebuildSpatialIndex(scene) {
+  if (!showScatterNodes()) {
+    quadtree = null;
+    return;
+  }
   quadtree = d3.quadtree()
     .x((row) => xScale(row.x))
     .y((row) => yScale(row.y))
@@ -1081,7 +1086,68 @@ function showTrailLines() {
 }
 
 function showTrailNodes() {
+  return state.trailMode !== "nodes";
+}
+
+function showScatterNodes() {
   return state.trailMode !== "trails";
+}
+
+function trailPointBounds(point) {
+  if (!DATA.timelineColumn || DATA.timelineMin == null || DATA.timelineMax == null) {
+    return { start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY };
+  }
+  if (DATA.timelineKind === "year") {
+    const year = Number(point.time);
+    if (!Number.isFinite(year)) return { start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY };
+    return { start: Date.UTC(year, 0, 1), end: Date.UTC(year + 1, 0, 1) - 1 };
+  }
+  const bucket = Array.isArray(point.time) ? point.time : [];
+  const year = Number(bucket[0]);
+  const month = Number(bucket[1]);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    return { start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY };
+  }
+  if (DATA.timelineKind === "date") {
+    const day = Number(bucket[2]);
+    if (!Number.isFinite(day)) return { start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY };
+    const start = Date.UTC(year, month - 1, day);
+    return { start, end: Date.UTC(year, month - 1, day + 1) - 1 };
+  }
+  const start = Date.UTC(year, month - 1, 1);
+  return { start, end: Date.UTC(year, month, 1) - 1 };
+}
+
+function trailPointInRange(point) {
+  const bounds = trailPointBounds(point);
+  return bounds.end >= state.timelineMin && bounds.start <= state.timelineMax;
+}
+
+function trailSegmentInRange(left, right) {
+  const leftBounds = trailPointBounds(left);
+  const rightBounds = trailPointBounds(right);
+  const segmentStart = Math.min(leftBounds.start, rightBounds.start);
+  const segmentEnd = Math.max(leftBounds.end, rightBounds.end);
+  return segmentEnd >= state.timelineMin && segmentStart <= state.timelineMax;
+}
+
+function strokeTrailSegment(ctx, left, right) {
+  ctx.beginPath();
+  ctx.moveTo(xScale(left.x), yScale(left.y));
+  ctx.lineTo(xScale(right.x), yScale(right.y));
+  ctx.stroke();
+}
+
+function strokeTrailArrow(ctx, left, right) {
+  const x1 = xScale(left.x), y1 = yScale(left.y);
+  const x2 = xScale(right.x), y2 = yScale(right.y);
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath();
+  ctx.moveTo(mx - 6 * Math.cos(angle - 0.45), my - 6 * Math.sin(angle - 0.45));
+  ctx.lineTo(mx, my);
+  ctx.lineTo(mx - 6 * Math.cos(angle + 0.45), my - 6 * Math.sin(angle + 0.45));
+  ctx.stroke();
 }
 
 function trailRange(key) {
@@ -1092,6 +1158,7 @@ function trailRange(key) {
 
 function drawTrails(ctx) {
   trailDots = [];
+  if (!showTrailLines() && !showTrailNodes()) return;
   const trails = activeTrails();
   if (!trails.length) return;
   const scale = colorScale();
@@ -1108,36 +1175,33 @@ function drawTrails(ctx) {
     const isHighlighted = !filtered && (highlight == null || highlight === trail.groupId);
     const trailAlpha = filtered ? 0.06 : (isHighlighted ? 0.9 : 0.12);
     const color = scale(trail.groupLabel);
+    const activePoints = pts.map((pt) => trailPointInRange(pt));
+    const visiblePoints = pts.filter((pt, index) => activePoints[index]);
+    if (!visiblePoints.length) continue;
 
     ctx.save();
     if (showTrailLines()) {
-      ctx.globalAlpha = trailAlpha;
       ctx.strokeStyle = color;
       ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(xScale(pts[0].x), yScale(pts[0].y));
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(xScale(pts[i].x), yScale(pts[i].y));
-      ctx.stroke();
+      ctx.globalAlpha = trailAlpha;
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (!trailSegmentInRange(pts[i], pts[i + 1])) continue;
+        strokeTrailSegment(ctx, pts[i], pts[i + 1]);
+      }
     }
 
     if (showTrailLines() && isHighlighted) {
       for (let i = 0; i < pts.length - 1; i++) {
-        const x1 = xScale(pts[i].x), y1 = yScale(pts[i].y);
-        const x2 = xScale(pts[i + 1].x), y2 = yScale(pts[i + 1].y);
-        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        ctx.beginPath();
-        ctx.moveTo(mx - 6 * Math.cos(angle - 0.45), my - 6 * Math.sin(angle - 0.45));
-        ctx.lineTo(mx, my);
-        ctx.lineTo(mx - 6 * Math.cos(angle + 0.45), my - 6 * Math.sin(angle + 0.45));
-        ctx.stroke();
+        if (!trailSegmentInRange(pts[i], pts[i + 1])) continue;
+        strokeTrailArrow(ctx, pts[i], pts[i + 1]);
       }
     }
 
     if (showTrailNodes()) {
       for (let i = 0; i < pts.length; i++) {
+        if (!activePoints[i]) continue;
         const px = xScale(pts[i].x), py = yScale(pts[i].y);
         const countNorm = cMax > cMin ? (pts[i].count - cMin) / (cMax - cMin) : 0.5;
         const baseR = isHighlighted ? 5 : 3;
@@ -1166,15 +1230,23 @@ function drawTrails(ctx) {
       }
     }
 
-    if (isHighlighted && pts.length >= 2) {
+    if (isHighlighted && visiblePoints.length >= 1) {
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = "#e2e8f0";
       ctx.font = "bold 10px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
-      ctx.fillText(pts[0].timeLabel, xScale(pts[0].x), yScale(pts[0].y) - 8);
+      ctx.fillText(
+        visiblePoints[0].timeLabel,
+        xScale(visiblePoints[0].x),
+        yScale(visiblePoints[0].y) - 8,
+      );
       ctx.textBaseline = "top";
-      ctx.fillText(pts[pts.length - 1].timeLabel, xScale(pts[pts.length - 1].x), yScale(pts[pts.length - 1].y) + 8);
+      ctx.fillText(
+        visiblePoints[visiblePoints.length - 1].timeLabel,
+        xScale(visiblePoints[visiblePoints.length - 1].x),
+        yScale(visiblePoints[visiblePoints.length - 1].y) + 8,
+      );
     }
 
     ctx.restore();
@@ -1187,33 +1259,35 @@ function draw(scene = sceneRows()) {
   const scale = colorScale();
   const selected = state.selectedIds;
   const hasSelection = selected.size > 0;
-  const trailsOn = activeTrails().length;
+  const trailsOn = activeTrails().length && state.trailMode !== "nodes";
   const baseOpacity = Math.max(0, Math.min(1, DATA.opacity ?? 1));
   const pointOpacity = trailsOn ? baseOpacity * 0.4 : baseOpacity;
   const ctx = plot.getContext("2d");
   ctx.clearRect(0, 0, width, height);
 
-  for (let pass = 0; pass < 2; pass += 1) {
-    for (const row of rows) {
-      const active = inTimeline(row) || !DATA.timelineColumn;
-      const chosen = selected.has(row.id);
-      let alpha = active ? pointOpacity : Math.max(0.03, pointOpacity * 0.12);
-      if (hasSelection && !chosen) alpha = active ? Math.max(0.05, pointOpacity * 0.16) : Math.max(0.02, pointOpacity * 0.06);
-      if (hasSelection && chosen) alpha = baseOpacity;
-      const bright = alpha >= Math.max(0.25, pointOpacity * 0.45);
-      if (pass === 0 && bright) continue;
-      if (pass === 1 && !bright) continue;
+  if (showScatterNodes()) {
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (const row of rows) {
+        const active = inTimeline(row) || !DATA.timelineColumn;
+        const chosen = selected.has(row.id);
+        let alpha = active ? pointOpacity : Math.max(0.03, pointOpacity * 0.12);
+        if (hasSelection && !chosen) alpha = active ? Math.max(0.05, pointOpacity * 0.16) : Math.max(0.02, pointOpacity * 0.06);
+        if (hasSelection && chosen) alpha = baseOpacity;
+        const bright = alpha >= Math.max(0.25, pointOpacity * 0.45);
+        if (pass === 0 && bright) continue;
+        if (pass === 1 && !bright) continue;
 
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = scale(colorValue(row));
-      ctx.beginPath();
-      ctx.arc(xScale(row.x), yScale(row.y), chosen ? pointRadius + 1.6 : pointRadius, 0, Math.PI * 2);
-      ctx.fill();
-      if (chosen) {
-        ctx.globalAlpha = Math.min(1, baseOpacity);
-        ctx.strokeStyle = "rgba(255,255,255,0.9)";
-        ctx.lineWidth = 1.1;
-        ctx.stroke();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = scale(colorValue(row));
+        ctx.beginPath();
+        ctx.arc(xScale(row.x), yScale(row.y), chosen ? pointRadius + 1.6 : pointRadius, 0, Math.PI * 2);
+        ctx.fill();
+        if (chosen) {
+          ctx.globalAlpha = Math.min(1, baseOpacity);
+          ctx.strokeStyle = "rgba(255,255,255,0.9)";
+          ctx.lineWidth = 1.1;
+          ctx.stroke();
+        }
       }
     }
   }
@@ -1399,6 +1473,10 @@ function dismissPopup({ clearSelection = true, redraw = true } = {}) {
 }
 
 function syncSelectionToVisible(scene) {
+  if (!showScatterNodes()) {
+    state.selectedIds = new Set();
+    return;
+  }
   if (!state.selectedIds.size) return;
   const allowed = new Set(scene.selectable.map((row) => row.id));
   state.selectedIds = new Set([...state.selectedIds].filter((id) => allowed.has(id)));
@@ -1643,7 +1721,10 @@ function updateSelectionBox() {
 }
 
 function handlePointClick(event) {
-  if (!quadtree) return;
+  if (!showScatterNodes() || !quadtree) {
+    dismissPopup();
+    return;
+  }
   const { x, y } = pointerPosition(event);
   const found = quadtree.find(x, y, 12);
   if (!found) {
@@ -1656,6 +1737,10 @@ function handlePointClick(event) {
 }
 
 function handleBrushSelection(bounds) {
+  if (!showScatterNodes()) {
+    dismissPopup();
+    return;
+  }
   const scene = sceneRows();
   const selected = scene.selectable
     .filter((row) => {
@@ -1673,6 +1758,39 @@ function handleBrushSelection(bounds) {
 
 const TRAIL_MODES = ["both", "trails", "nodes"];
 const TRAIL_LABELS = { both: "Trails + Nodes", trails: "Trails Only", nodes: "Nodes Only" };
+const PAGE_VARIANTS = {
+  "patent-evolution-monthly-2k.html": [
+    { id: "2k", label: "Monthly 2k", href: "patent-evolution-monthly-2k.html" },
+    { id: "4k", label: "Monthly 4k", href: "patent-evolution-monthly-4k.html" },
+  ],
+  "patent-evolution-monthly-4k.html": [
+    { id: "2k", label: "Monthly 2k", href: "patent-evolution-monthly-2k.html" },
+    { id: "4k", label: "Monthly 4k", href: "patent-evolution-monthly-4k.html" },
+  ],
+};
+
+function pageVariants() {
+  const path = window.location.pathname.split("/").pop() || "";
+  return PAGE_VARIANTS[path] || [];
+}
+
+function buildPageSwitchControls() {
+  const variants = pageVariants();
+  if (variants.length < 2) return;
+  const group = $("#page-switch-group");
+  const current = window.location.pathname.split("/").pop() || "";
+  group.style.display = "";
+  group.innerHTML = variants.map((variant) => (
+    `<button data-page-switch="${escapeHtml(variant.href)}" class="${variant.href === current ? "active" : ""}">${escapeHtml(variant.label)}</button>`
+  )).join("");
+  group.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-page-switch]");
+    if (!button) return;
+    const target = button.dataset.pageSwitch;
+    if (!target || target === current) return;
+    window.location.href = target;
+  });
+}
 
 function buildTrailsControls() {
   if (!DATA.centroidTrails || !Object.keys(DATA.centroidTrails).length) return;
@@ -1685,6 +1803,7 @@ function buildTrailsControls() {
     const idx = (TRAIL_MODES.indexOf(state.trailMode) + 1) % TRAIL_MODES.length;
     state.trailMode = TRAIL_MODES[idx];
     btn.textContent = TRAIL_LABELS[state.trailMode];
+    if (!showScatterNodes()) dismissPopup({ clearSelection: true, redraw: false });
     if (state.trailMode === "nodes") state.highlightTrailCluster = null;
     refreshScene();
   });
@@ -1741,7 +1860,7 @@ function bindInteractions() {
   });
 
   overlayNode.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || state.playing || event.shiftKey) return;
+    if (event.button !== 0 || state.playing || event.shiftKey || !showScatterNodes()) return;
     const { x, y } = pointerPosition(event);
     dragState = { startX: x, startY: y, currentX: x, currentY: y, moved: false };
     overlayNode.setPointerCapture?.(event.pointerId);
@@ -1853,6 +1972,7 @@ function boot() {
     buildSortControls();
     buildTimelineControls();
     buildTrailsControls();
+    buildPageSwitchControls();
     bindInteractions();
     resize();
     syncUrlState();

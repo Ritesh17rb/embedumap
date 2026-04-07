@@ -26,3 +26,8 @@ hackernews.csv
 hackernews_new.csv
 patents_new.csv
 stackoverflow-map.html
+
+# Local monthly patent review artifacts
+patents_monthly.csv
+patents-monthly-*.html
+patent-evolution-monthly-*.html
