@@ -594,10 +594,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     align-items: center;
     gap: 10px;
     flex: 1;
+    flex-wrap: wrap;
     min-width: min(720px, 100%);
   }
 
   #timeline-wrap.visible { display: flex; }
+
+  #timeline-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
 
   .timeline-label {
     color: var(--text-dim);
@@ -611,6 +619,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   #timeline-play.playing {
     background: rgba(239, 68, 68, 0.16);
     border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  #timeline-speed-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #timeline-speed {
+    width: 110px;
+    accent-color: var(--accent);
+  }
+
+  #timeline-speed-value {
+    min-width: 3.5ch;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    text-align: right;
   }
 
   .range-block {
@@ -756,7 +782,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </div>
   <div id="timeline-bar">
     <div id="timeline-wrap">
-      <button id="timeline-play" type="button">▶ Play</button>
+      <div id="timeline-tools">
+        <button id="timeline-play" type="button">&#9654; Play</button>
+        <span class="label">Playback</span>
+        <div id="timeline-mode-group" class="button-group"></div>
+        <label id="timeline-speed-wrap" for="timeline-speed">
+          <span class="label">Speed</span>
+          <input id="timeline-speed" type="range" min="25" max="400" step="25" value="100">
+          <span id="timeline-speed-value"></span>
+        </label>
+      </div>
       <span id="timeline-start" class="timeline-label"></span>
       <div class="range-block" id="timeline-range">
         <div class="timeline-line"></div>
@@ -801,6 +836,11 @@ const margin = { top: 18, right: 18, bottom: 18, left: 18 };
 const pointRadius = 4;
 const sliderMax = 10000;
 const playDurationMs = 12000;
+const defaultPlaySpeed = 100;
+const PLAYBACK_MODES = [
+  { id: "slide", label: "Slide" },
+  { id: "reveal", label: "Reveal" },
+];
 
 const plot = $("#plot");
 const overlay = d3.select("#overlay");
@@ -880,6 +920,14 @@ function formatDuration(ms0, ms1) {
   const years = Math.floor(totalMonths / 12);
   const months = totalMonths % 12;
   return months ? `${years}y ${months}m` : `${years}y`;
+}
+
+function formatPlaySpeedValue() {
+  return `${(state.playSpeed / 100).toFixed(2).replace(/\\.?0+$/, "")}x`;
+}
+
+function playbackDurationMs() {
+  return playDurationMs / Math.max(0.25, state.playSpeed / 100);
 }
 
 function sliderToMs(value) {
@@ -1339,6 +1387,7 @@ function syncControlsFromState() {
   }
   syncSortControls();
   syncTimelineUi();
+  syncPlaybackControls();
 }
 
 function syncTimelineUi() {
@@ -1357,6 +1406,15 @@ function syncTimelineUi() {
   $("#timeline-fill").style.width = `${((end - start) / sliderMax) * 100}%`;
 }
 
+function syncPlaybackControls() {
+  const speedInput = $("#timeline-speed");
+  if (speedInput) speedInput.value = String(state.playSpeed);
+  $("#timeline-speed-value").textContent = formatPlaySpeedValue();
+  for (const button of $("#timeline-mode-group").querySelectorAll("button")) {
+    button.classList.toggle("active", button.dataset.playbackMode === state.playbackMode);
+  }
+}
+
 function pausePlay() {
   state.playing = false;
   $("#timeline-play").textContent = "▶ Play";
@@ -1371,8 +1429,11 @@ function stepPlay(timestamp) {
   playPrev = timestamp;
   const windowSize = state.timelineMax - state.timelineMin;
   const fullRange = Math.max(1, DATA.timelineMax - DATA.timelineMin);
-  state.timelineMax = Math.min(DATA.timelineMax, state.timelineMax + (delta * fullRange) / playDurationMs);
-  state.timelineMin = Math.max(DATA.timelineMin, state.timelineMax - windowSize);
+  state.timelineMax = Math.min(DATA.timelineMax, state.timelineMax + (delta * fullRange) / playbackDurationMs());
+  // "Reveal" keeps the left edge fixed so Anand can inspect every intermediate state.
+  if (state.playbackMode === "slide") {
+    state.timelineMin = Math.max(DATA.timelineMin, state.timelineMax - windowSize);
+  }
   syncTimelineUi();
   refreshScene();
   if (state.timelineMax >= DATA.timelineMax) {
@@ -1385,13 +1446,20 @@ function stepPlay(timestamp) {
 function startPlay() {
   const fullRange = Math.max(1, DATA.timelineMax - DATA.timelineMin);
   let windowSize = state.timelineMax - state.timelineMin;
+  // Reuse the existing readable starter window whenever playback begins from the full range.
   if (windowSize >= fullRange * 0.999) {
     windowSize = Math.max(fullRange * 0.18, fullRange / Math.min(12, Math.max(2, DATA.rows.length)));
     state.timelineMin = DATA.timelineMin;
     state.timelineMax = Math.min(DATA.timelineMax, DATA.timelineMin + windowSize);
   } else if (state.timelineMax >= DATA.timelineMax) {
-    state.timelineMin = DATA.timelineMin;
-    state.timelineMax = Math.min(DATA.timelineMax, DATA.timelineMin + windowSize);
+    if (state.playbackMode === "reveal") {
+      const replayStart = Math.max(DATA.timelineMin, DATA.timelineMax - windowSize);
+      state.timelineMin = Math.min(state.timelineMin, replayStart);
+      state.timelineMax = Math.min(DATA.timelineMax, state.timelineMin + windowSize);
+    } else {
+      state.timelineMin = DATA.timelineMin;
+      state.timelineMax = Math.min(DATA.timelineMax, DATA.timelineMin + windowSize);
+    }
   }
   state.playing = true;
   playPrev = null;
@@ -1407,10 +1475,16 @@ function buildTimelineControls() {
   const minInput = $("#timeline-min");
   const maxInput = $("#timeline-max");
   const timelineFill = $("#timeline-fill");
+  const modeGroup = $("#timeline-mode-group");
+  const speedInput = $("#timeline-speed");
   minInput.min = "0";
   minInput.max = String(sliderMax);
   maxInput.min = "0";
   maxInput.max = String(sliderMax);
+  // Keep the new playback controls isolated to the timeline so the rest of the viewer stays untouched.
+  modeGroup.innerHTML = PLAYBACK_MODES.map((mode) => (
+    `<button type="button" data-playback-mode="${escapeHtml(mode.id)}">${escapeHtml(mode.label)}</button>`
+  )).join("");
 
   minInput.addEventListener("input", () => {
     const next = Math.min(Number(minInput.value), Number(maxInput.value) - 100);
@@ -1472,12 +1546,23 @@ function buildTimelineControls() {
   timelineFill.addEventListener("pointerup", finishRangeDrag);
   timelineFill.addEventListener("pointercancel", finishRangeDrag);
 
+  modeGroup.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-playback-mode]");
+    if (!button) return;
+    state.playbackMode = button.dataset.playbackMode;
+    syncPlaybackControls();
+  });
+  speedInput.addEventListener("input", () => {
+    state.playSpeed = Number(speedInput.value) || defaultPlaySpeed;
+    syncPlaybackControls();
+  });
   $("#timeline-play").addEventListener("click", () => {
     if (state.playing) pausePlay();
     else startPlay();
   });
 
   syncTimelineUi();
+  syncPlaybackControls();
 }
 
 function pointerPosition(event) {
@@ -1617,6 +1702,8 @@ function boot() {
       timelineMin: DATA.timelineMin,
       timelineMax: DATA.timelineMax,
       playing: false,
+      playbackMode: "slide",
+      playSpeed: defaultPlaySpeed,
     };
     globalThis.state = state;
     globalThis.renderPopup = renderPopup;

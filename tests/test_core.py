@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +17,7 @@ from embedumap.core import (
     direct_cluster_labels,
     split_option_values,
 )
+from embedumap.html import render_html
 
 
 def test_split_option_values_flattens_and_deduplicates() -> None:
@@ -93,6 +96,26 @@ def test_build_payload_includes_popup_sort_columns() -> None:
     assert payload["barChartCorner"] == "top-right"
     assert payload["axisLabels"] == {"x": "People -> products", "y": "Narrative -> technical"}
     assert payload["timelineKind"] == "year"
+
+
+def test_render_html_embeds_json_safely_for_windows_paths_and_newlines() -> None:
+    payload = {
+        "title": "Map",
+        "source": r"C:\Users\admin\work\embedumap\sample.csv",
+        "rows": [
+            {
+                "label": "Line 1\nLine 2",
+                "raw": {"path": r"C:\Users\admin\work\embedumap\data.txt"},
+            }
+        ],
+    }
+
+    html = render_html(payload)
+    assert 'id="timeline-mode-group"' in html
+    assert 'id="timeline-speed"' in html
+    match = re.search(r'<script id="data-json" type="application/json">(.*?)</script>', html, re.S)
+    assert match is not None
+    assert json.loads(match.group(1)) == payload
 
 
 def test_default_cache_path_tracks_output_directory() -> None:
