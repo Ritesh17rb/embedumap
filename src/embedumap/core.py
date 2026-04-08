@@ -84,6 +84,7 @@ class BuildConfig:
     dimensions: int
     sample: int | None
     dry_run: bool
+    centroid_trails: bool
 
 
 @dataclass(slots=True)
@@ -1380,6 +1381,110 @@ def analyze_records(
     return coords, cluster_ids, cluster_labels, axis_labels
 
 
+MIN_CENTROID_BUCKET_SIZE = 3
+
+
+def compute_centroid_trails(
+    rows: list[dict[str, object]],
+    cluster_labels: dict[int, str],
+    timeline_kind_value: str | None,
+    filter_columns: list[str] | None = None,
+) -> dict[str, list[dict[str, object]]] | None:
+    """Compute centroid trails per group per time bucket."""
+
+    timed = [row for row in rows if row["timelineMs"] is not None]
+    if len(timed) < MIN_CENTROID_BUCKET_SIZE:
+        return None
+
+    result: dict[str, list[dict[str, object]]] = {}
+    cluster_trails = _trails_for_group(
+        timed,
+        timeline_kind_value,
+        group_fn=lambda row: row["clusterId"],
+        label_fn=lambda group_id: cluster_labels.get(group_id, str(group_id)),
+    )
+    if cluster_trails:
+        result["cluster"] = cluster_trails
+
+    for column in (filter_columns or []):
+        if column == "cluster":
+            continue
+        column_trails = _trails_for_group(
+            timed,
+            timeline_kind_value,
+            group_fn=lambda row, key=column: row["filters"].get(key, "(blank)"),
+            label_fn=lambda group_id: str(group_id),
+        )
+        if column_trails:
+            result[column] = column_trails
+
+    return result or None
+
+
+def _trails_for_group(
+    timed_rows: list[dict],
+    timeline_kind_value: str | None,
+    group_fn,
+    label_fn,
+) -> list[dict[str, object]]:
+    """Build centroid trails for one grouping."""
+
+    buckets: dict[tuple, list[dict]] = {}
+    for row in timed_rows:
+        group_id = group_fn(row)
+        bucket = _time_bucket(row["timelineMs"], timeline_kind_value)
+        buckets.setdefault((group_id, bucket), []).append(row)
+
+    group_ids = sorted(set(group_fn(row) for row in timed_rows), key=str)
+    trails = []
+    for group_id in group_ids:
+        points = []
+        group_buckets = sorted(
+            ((bucket, rows_for_bucket) for (gid, bucket), rows_for_bucket in buckets.items() if gid == group_id),
+            key=lambda item: item[0],
+        )
+        for bucket, rows_for_bucket in group_buckets:
+            if len(rows_for_bucket) < MIN_CENTROID_BUCKET_SIZE:
+                continue
+            cx = sum(row["x"] for row in rows_for_bucket) / len(rows_for_bucket)
+            cy = sum(row["y"] for row in rows_for_bucket) / len(rows_for_bucket)
+            std = (sum((row["x"] - cx) ** 2 + (row["y"] - cy) ** 2 for row in rows_for_bucket) / len(rows_for_bucket)) ** 0.5
+            points.append(
+                {
+                    "time": bucket,
+                    "timeLabel": _bucket_label(bucket, timeline_kind_value),
+                    "x": round(cx, 6),
+                    "y": round(cy, 6),
+                    "count": len(rows_for_bucket),
+                    "std": round(std, 6),
+                }
+            )
+        if len(points) >= 2:
+            trails.append({"groupId": str(group_id), "groupLabel": label_fn(group_id), "points": points})
+    return trails
+
+
+def _time_bucket(ms: int, kind: str | None) -> int | tuple[int, int] | tuple[int, int, int]:
+    """Map a UTC-ms timestamp to a discrete time bucket."""
+
+    dt = datetime.fromtimestamp(ms / 1000, tz=UTC)
+    if kind == "year":
+        return dt.year
+    if kind == "date":
+        return (dt.year, dt.month, dt.day)
+    return (dt.year, dt.month)
+
+
+def _bucket_label(bucket: int | tuple, kind: str | None) -> str:
+    """Human-readable label for a time bucket."""
+
+    if isinstance(bucket, tuple):
+        if len(bucket) == 3:
+            return f"{bucket[0]}-{bucket[1]:02d}-{bucket[2]:02d}"
+        return f"{bucket[0]}-{bucket[1]:02d}"
+    return str(bucket)
+
+
 def build_payload(
     source: CsvSource,
     config: BuildConfig,
@@ -1467,4 +1572,5 @@ def build_payload(
         "rows": rows,
         "xDomain": [round(float(min(x_values)), 6), round(float(max(x_values)), 6)],
         "yDomain": [round(float(min(y_values)), 6), round(float(max(y_values)), 6)],
+        "centroidTrails": compute_centroid_trails(rows, cluster_labels, timeline_kind_value, filter_columns) if config.centroid_trails else None,
     }
