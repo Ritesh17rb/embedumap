@@ -67,7 +67,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     z-index: 3;
     display: flex;
     align-items: center;
-    gap: 12px 16px;
+    gap: 10px;
     flex-wrap: wrap;
     padding: 10px 14px;
     background: var(--bg-panel);
@@ -88,7 +88,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     flex-direction: column;
     gap: 2px;
     margin-right: 10px;
-    padding-top: 2px;
   }
 
   #brand-title {
@@ -99,19 +98,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   #brand-subtitle {
-    color: var(--text-dim);
-    font-size: 0.78rem;
-    font-weight: 600;
+    color: var(--text-faint);
+    font-size: 0.68rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
   }
 
   .label {
-    color: var(--text-dim);
-    font-size: 0.72rem;
-    font-weight: 600;
+    color: var(--text-faint);
+    font-size: 0.68rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     white-space: nowrap;
   }
 
@@ -119,73 +116,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     display: inline-flex;
     flex-wrap: wrap;
     gap: 6px;
-  }
-
-  .control-section {
-    display: grid;
-    gap: 4px;
-    align-content: center;
-    min-width: 0;
-  }
-
-  .control-section.compact {
-    gap: 3px;
-  }
-
-  #controls-spacer {
-    flex: 1 1 auto;
-    min-width: 16px;
-  }
-
-  #controls-meta {
-    display: contents;
-  }
-
-  #color-select {
-    min-width: 150px;
-    width: 150px;
-  }
-
-  #filters-toggle {
-    min-width: 112px;
-    justify-content: center;
-  }
-
-  #filters-panel {
-    display: none;
-    width: 100%;
-    padding: 10px 12px 12px;
-    border: 1px solid var(--stroke);
-    border-radius: 16px;
-    background: rgba(2, 6, 23, 0.24);
-  }
-
-  #filters-panel.visible {
-    display: block;
-  }
-
-  #filter-group {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 180px));
-    gap: 8px 10px;
-    width: 100%;
-  }
-
-  .control-field {
-    display: grid;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .control-field-label {
-    color: var(--text-dim);
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .button-group button,
@@ -215,21 +145,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     color: #eff6ff;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
     border-color: transparent;
-  }
-
-  #filters-toggle.active {
-    color: #eff6ff;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
-    border-color: transparent;
-  }
-
-  select {
-    min-width: 0;
-    max-width: 100%;
-    width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   #plot-wrap {
@@ -530,6 +445,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   #status-stack {
+    margin-left: auto;
     display: grid;
     gap: 4px;
     justify-items: end;
@@ -802,10 +718,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   @media (max-width: 900px) {
-    #controls {
-      align-items: flex-start;
-    }
-
     #status-stack,
     #axis-legend {
       justify-items: start;
@@ -827,24 +739,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       min-width: 100%;
     }
 
-    #controls-spacer {
-      display: none;
-    }
-
-    #controls-meta {
-      width: 100%;
-      display: grid;
-      gap: 10px;
-    }
-
-    #status-stack {
-      width: 100%;
-    }
-
-    #filter-group {
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    }
-
     .timeline-label {
       min-width: 70px;
       font-size: 0.75rem;
@@ -859,30 +753,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div id="brand-title"></div>
       <div id="brand-subtitle"></div>
     </div>
-    <div class="control-section compact">
-      <span class="label">Color</span>
-      <select id="color-select" aria-label="Color by"></select>
-    </div>
-    <div class="control-section compact">
-      <span class="label">Filters</span>
-      <button id="filters-toggle" type="button" aria-expanded="false">Filters</button>
-    </div>
+    <span class="label">Color</span>
+    <div id="color-group" class="button-group"></div>
+    <span class="label">Filter</span>
+    <div id="filter-group" class="button-group"></div>
     <div id="trails-group" class="button-group" style="display:none">
       <button id="trails-toggle">Trails</button>
     </div>
     <div id="page-switch-group" class="button-group" style="display:none"></div>
-    <div id="controls-spacer"></div>
-    <div id="controls-meta">
-      <div id="status-stack">
-        <div id="summary" class="label"></div>
-        <div id="axis-legend" aria-label="Projection axes">
-          <div class="axis-row"><span class="axis-tag">X</span><span id="axis-x-label" class="axis-text"></span></div>
-          <div class="axis-row"><span class="axis-tag">Y</span><span id="axis-y-label" class="axis-text"></span></div>
-        </div>
+    <div id="status-stack">
+      <div id="summary" class="label"></div>
+      <div id="axis-legend" aria-label="Projection axes">
+        <div class="axis-row"><span class="axis-tag">X</span><span id="axis-x-label" class="axis-text"></span></div>
+        <div class="axis-row"><span class="axis-tag">Y</span><span id="axis-y-label" class="axis-text"></span></div>
       </div>
-    </div>
-    <div id="filters-panel">
-      <div id="filter-group"></div>
     </div>
   </div>
   <div id="plot-wrap">
@@ -1319,8 +1203,18 @@ function strokeTrailArrow(ctx, left, right) {
 
 function trailRange(key) {
   let min = Infinity, max = 0;
-  for (const t of activeTrails()) for (const p of t.points) { min = Math.min(min, p[key] ?? 0); max = Math.max(max, p[key] ?? 0); }
+  for (const trail of activeTrails()) for (const point of trail.points) { min = Math.min(min, point[key] ?? 0); max = Math.max(max, point[key] ?? 0); }
   return { min, max: max || 1 };
+}
+
+function trailActiveAlpha(filtered, isHighlighted) {
+  if (filtered) return 0.06;
+  return isHighlighted ? 0.9 : 0.12;
+}
+
+function trailContextAlpha(filtered, isHighlighted) {
+  if (filtered) return 0.015;
+  return isHighlighted ? 0.18 : 0.03;
 }
 
 function drawTrails(ctx) {
@@ -1340,11 +1234,11 @@ function drawTrails(ctx) {
 
     const filtered = filterVal && trail.groupLabel !== filterVal;
     const isHighlighted = !filtered && (highlight == null || highlight === trail.groupId);
-    const trailAlpha = filtered ? 0.06 : (isHighlighted ? 0.9 : 0.12);
+    const activeAlpha = trailActiveAlpha(filtered, isHighlighted);
+    const contextAlpha = trailContextAlpha(filtered, isHighlighted);
     const color = scale(trail.groupLabel);
     const activePoints = pts.map((pt) => trailPointInRange(pt));
     const visiblePoints = pts.filter((pt, index) => activePoints[index]);
-    if (!visiblePoints.length) continue;
 
     ctx.save();
     if (showTrailLines()) {
@@ -1352,7 +1246,12 @@ function drawTrails(ctx) {
       ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
-      ctx.globalAlpha = trailAlpha;
+      // Keep the full trail faintly visible so the moving in-range segment has context during playback.
+      ctx.globalAlpha = contextAlpha;
+      for (let i = 0; i < pts.length - 1; i++) {
+        strokeTrailSegment(ctx, pts[i], pts[i + 1]);
+      }
+      ctx.globalAlpha = activeAlpha;
       for (let i = 0; i < pts.length - 1; i++) {
         if (!trailSegmentInRange(pts[i], pts[i + 1])) continue;
         strokeTrailSegment(ctx, pts[i], pts[i + 1]);
@@ -1368,13 +1267,13 @@ function drawTrails(ctx) {
 
     if (showTrailNodes()) {
       for (let i = 0; i < pts.length; i++) {
-        if (!activePoints[i]) continue;
         const px = xScale(pts[i].x), py = yScale(pts[i].y);
         const countNorm = cMax > cMin ? (pts[i].count - cMin) / (cMax - cMin) : 0.5;
         const baseR = isHighlighted ? 5 : 3;
         const r = baseR + countNorm * baseR;
         const ageFactor = pts.length > 1 ? i / (pts.length - 1) : 1;
-        ctx.globalAlpha = trailAlpha * (0.4 + 0.6 * ageFactor);
+        const pointAlpha = activePoints[i] ? activeAlpha : contextAlpha;
+        ctx.globalAlpha = pointAlpha * (0.4 + 0.6 * ageFactor);
 
         const stdNorm = sMax > sMin ? ((pts[i].std ?? 0) - sMin) / (sMax - sMin) : 0;
         const blur = r + stdNorm * r * 2;
@@ -1393,7 +1292,9 @@ function drawTrails(ctx) {
         ctx.arc(px, py, r, 0, Math.PI * 2);
         ctx.stroke();
 
-        trailDots.push({ px, py, r: Math.max(r, blur), trail, pt: pts[i] });
+        if (activePoints[i]) {
+          trailDots.push({ px, py, r: Math.max(r, blur), trail, pt: pts[i] });
+        }
       }
     }
 
@@ -1426,8 +1327,8 @@ function draw(scene = sceneRows()) {
   const scale = colorScale();
   const selected = state.selectedIds;
   const hasSelection = selected.size > 0;
-  const trailsOn = activeTrails().length && state.trailMode !== "nodes";
   const baseOpacity = Math.max(0, Math.min(1, DATA.opacity ?? 1));
+  const trailsOn = activeTrails().length && state.trailMode !== "nodes";
   const pointOpacity = trailsOn ? baseOpacity * 0.4 : baseOpacity;
   const ctx = plot.getContext("2d");
   ctx.clearRect(0, 0, width, height);
@@ -1667,13 +1568,18 @@ function buildBrand() {
 }
 
 function buildColorControls() {
-  const select = $("#color-select");
-  select.innerHTML = DATA.colorColumns.map((column) => (
-    `<option value="${escapeHtml(column)}"${column === state.colorBy ? " selected" : ""}>${escapeHtml(displaySortLabel(column))}</option>`
+  const group = $("#color-group");
+  group.innerHTML = DATA.colorColumns.map((column) => (
+    `<button data-color="${escapeHtml(column)}" class="${column === state.colorBy ? "active" : ""}">${escapeHtml(displaySortLabel(column))}</button>`
   )).join("");
-  select.addEventListener("change", (event) => {
-    state.colorBy = event.target.value;
+  group.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-color]");
+    if (!button) return;
+    state.colorBy = button.dataset.color;
     state.highlightTrailCluster = null;
+    for (const candidate of group.querySelectorAll("button")) {
+      candidate.classList.toggle("active", candidate === button);
+    }
     refreshScene();
   });
 }
@@ -1682,34 +1588,18 @@ function buildFilterControls() {
   const container = $("#filter-group");
   container.innerHTML = DATA.filterColumns.map((column) => {
     const values = [...new Set(DATA.rows.map((row) => String(row.filters[column] ?? "(blank)")))].sort();
-    const options = [`<option value="">All</option>`]
+    const options = [`<option value="">All ${escapeHtml(column)}</option>`]
       .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
       .join("");
-    return `<label class="control-field"><span class="control-field-label">${escapeHtml(displaySortLabel(column))}</span><select data-filter="${escapeHtml(column)}">${options}</select></label>`;
+    return `<select data-filter="${escapeHtml(column)}">${options}</select>`;
   }).join("");
   for (const select of container.querySelectorAll("select")) {
     select.value = state.filters[select.dataset.filter] ?? "";
     select.addEventListener("change", (event) => {
       state.filters[event.target.dataset.filter] = event.target.value;
-      syncFilterToggle();
       refreshScene();
     });
   }
-  $("#filters-toggle").addEventListener("click", () => {
-    state.filtersOpen = !state.filtersOpen;
-    syncFilterToggle();
-  });
-  syncFilterToggle();
-}
-
-function syncFilterToggle() {
-  const activeCount = Object.values(state.filters).filter(Boolean).length;
-  const toggle = $("#filters-toggle");
-  const panel = $("#filters-panel");
-  toggle.textContent = activeCount ? `Filters (${activeCount})` : "Filters";
-  toggle.classList.toggle("active", state.filtersOpen || activeCount > 0);
-  toggle.setAttribute("aria-expanded", state.filtersOpen ? "true" : "false");
-  panel.classList.toggle("visible", state.filtersOpen);
 }
 
 function buildSortControls() {
@@ -1727,11 +1617,12 @@ function buildSortControls() {
 }
 
 function syncControlsFromState() {
-  $("#color-select").value = state.colorBy;
+  for (const button of $("#color-group").querySelectorAll("button")) {
+    button.classList.toggle("active", button.dataset.color === state.colorBy);
+  }
   for (const select of $("#filter-group").querySelectorAll("select")) {
     select.value = state.filters[select.dataset.filter] ?? "";
   }
-  syncFilterToggle();
   syncSortControls();
   syncTimelineUi();
   syncPlaybackControls();
@@ -1777,6 +1668,7 @@ function stepPlay(timestamp) {
   const windowSize = state.timelineMax - state.timelineMin;
   const fullRange = Math.max(1, DATA.timelineMax - DATA.timelineMin);
   state.timelineMax = Math.min(DATA.timelineMax, state.timelineMax + (delta * fullRange) / playbackDurationMs());
+  // "Reveal" keeps the left edge fixed so Anand can inspect every intermediate state.
   if (state.playbackMode === "slide") {
     state.timelineMin = Math.max(DATA.timelineMin, state.timelineMax - windowSize);
   }
@@ -1792,6 +1684,7 @@ function stepPlay(timestamp) {
 function startPlay() {
   const fullRange = Math.max(1, DATA.timelineMax - DATA.timelineMin);
   let windowSize = state.timelineMax - state.timelineMin;
+  // Reuse the existing readable starter window whenever playback begins from the full range.
   if (windowSize >= fullRange * 0.999) {
     windowSize = Math.max(fullRange * 0.18, fullRange / Math.min(12, Math.max(2, DATA.rows.length)));
     state.timelineMin = DATA.timelineMin;
@@ -1826,6 +1719,7 @@ function buildTimelineControls() {
   minInput.max = String(sliderMax);
   maxInput.min = "0";
   maxInput.max = String(sliderMax);
+  // Keep the new playback controls isolated to the timeline so the rest of the viewer stays untouched.
   modeGroup.innerHTML = PLAYBACK_MODES.map((mode) => (
     `<button type="button" data-playback-mode="${escapeHtml(mode.id)}">${escapeHtml(mode.label)}</button>`
   )).join("");
@@ -2092,7 +1986,6 @@ function bindInteractions() {
       return;
     }
     const { x, y } = pointerPosition(event);
-
     // Check centroid trail dots first
     const hitDot = trailDots.find((d) => Math.hypot(d.px - x, d.py - y) <= d.r + 4);
     if (hitDot) {
@@ -2155,7 +2048,6 @@ function boot() {
     state = {
       colorBy: DATA.colorColumns[0] ?? "cluster",
       filters: Object.fromEntries(DATA.filterColumns.map((column) => [column, ""])),
-      filtersOpen: false,
       selectedIds: new Set(),
       sortColumn: DATA.defaultSort,
       sortAsc: true,
