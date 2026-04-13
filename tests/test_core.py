@@ -117,15 +117,28 @@ def test_render_html_embeds_json_safely_for_windows_paths_and_newlines() -> None
     }
 
     html = render_html(payload)
-    assert 'id="trails-group"' in html
-    assert 'Trails Only' in html
-    assert 'Nodes Only' in html
-    assert 'id="page-switch-group"' in html
     assert 'id="timeline-mode-group"' in html
     assert 'id="timeline-speed"' in html
+    assert "Playback" in html
+    assert "Speed" in html
+    assert 'id="color-select"' in html
+    assert 'id="filters-toggle"' in html
+    assert 'id="filters-panel"' in html
+    assert 'class="control-field-label"' in html
     match = re.search(r'<script id="data-json" type="application/json">(.*?)</script>', html, re.S)
     assert match is not None
     assert json.loads(match.group(1)) == payload
+
+
+def test_checked_in_index_html_embeds_valid_json_payloads() -> None:
+    html = (Path(__file__).resolve().parents[1] / "index.html").read_text(encoding="utf-8")
+    payloads = re.findall(r'<script id="data-json(?:-[^"]+)?" type="application/json">(.*?)</script>', html, re.S)
+
+    assert payloads
+    for payload in payloads:
+        parsed = json.loads(payload)
+        assert isinstance(parsed, dict)
+        assert "rows" in parsed
 
 
 def test_default_cache_path_tracks_output_directory() -> None:
