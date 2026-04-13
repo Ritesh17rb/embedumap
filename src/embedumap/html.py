@@ -1134,7 +1134,7 @@ function showTrailLines() {
 }
 
 function showTrailNodes() {
-  return state.trailMode !== "nodes";
+  return state.trailMode !== "trails";
 }
 
 function showScatterNodes() {
@@ -1142,6 +1142,9 @@ function showScatterNodes() {
 }
 
 function trailPointBounds(point) {
+  if (Number.isFinite(point.timeStartMs) && Number.isFinite(point.timeEndMs)) {
+    return { start: point.timeStartMs, end: point.timeEndMs };
+  }
   if (!DATA.timelineColumn || DATA.timelineMin == null || DATA.timelineMax == null) {
     return { start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY };
   }

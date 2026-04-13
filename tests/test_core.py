@@ -18,6 +18,7 @@ from embedumap.core import (
     compute_centroid_trails,
     default_cache_path,
     direct_cluster_labels,
+    parse_centroid_time_period,
     split_option_values,
 )
 from embedumap.html import render_html
@@ -68,7 +69,8 @@ def test_build_payload_includes_popup_sort_columns() -> None:
         dimensions=768,
         sample=None,
         dry_run=False,
-        centroid_trails=False,
+        centroid_trails=[],
+        centroid_time_period=None,
     )
 
     class Record:
@@ -140,26 +142,38 @@ def test_time_bucket_supports_year_month_and_day_granularity() -> None:
     assert _bucket_label((2024, 2, 2), "date") == "2024-02-02"
 
 
-def test_compute_centroid_trails_includes_count_std_and_filter_groups() -> None:
+def test_parse_centroid_time_period_supports_aliases_fixed_and_calendar_values() -> None:
+    assert parse_centroid_time_period("hourly").duration_ms == 3_600_000
+    assert parse_centroid_time_period("2h 15min").duration_ms == 8_100_000
+    assert parse_centroid_time_period("fortnightly").frequency == "2W-SUN"
+    assert parse_centroid_time_period("2Q").frequency == "2Q-DEC"
+
+
+def test_compute_centroid_trails_includes_requested_groups_and_two_point_buckets() -> None:
+    def ms(value: str) -> int:
+        return int(pd.Timestamp(value).value // 1_000_000)
+
     rows = [
-        {"timelineMs": 1704067200000, "clusterId": 0, "x": 0.0, "y": 0.0, "filters": {"category": "A"}},
-        {"timelineMs": 1704067200000, "clusterId": 0, "x": 1.0, "y": 0.0, "filters": {"category": "A"}},
-        {"timelineMs": 1704067200000, "clusterId": 0, "x": 0.0, "y": 1.0, "filters": {"category": "A"}},
-        {"timelineMs": 1706745600000, "clusterId": 0, "x": 2.0, "y": 2.0, "filters": {"category": "A"}},
-        {"timelineMs": 1706745600000, "clusterId": 0, "x": 3.0, "y": 2.0, "filters": {"category": "A"}},
-        {"timelineMs": 1706745600000, "clusterId": 0, "x": 2.0, "y": 3.0, "filters": {"category": "A"}},
+        {"timelineMs": ms("2024-01-01T00:10:00Z"), "clusterId": 0, "x": 0.0, "y": 0.0, "filters": {"category": "A"}},
+        {"timelineMs": ms("2024-01-01T00:40:00Z"), "clusterId": 0, "x": 2.0, "y": 0.0, "filters": {"category": "A"}},
+        {"timelineMs": ms("2024-01-01T01:05:00Z"), "clusterId": 0, "x": 2.0, "y": 2.0, "filters": {"category": "A"}},
+        {"timelineMs": ms("2024-01-01T01:35:00Z"), "clusterId": 0, "x": 4.0, "y": 2.0, "filters": {"category": "A"}},
+        {"timelineMs": ms("2024-01-01T02:00:00Z"), "clusterId": 0, "x": 8.0, "y": 8.0, "filters": {"category": "A"}},
     ]
 
-    trails = compute_centroid_trails(rows, {0: "Cluster 1"}, "datetime", ["category"])
+    trails = compute_centroid_trails(rows, {0: "Cluster 1"}, "datetime", ["category", "cluster"], "1h")
 
     assert sorted(trails) == ["category", "cluster"]
     assert trails["cluster"][0]["groupLabel"] == "Cluster 1"
     assert trails["category"][0]["groupLabel"] == "A"
+    assert len(trails["cluster"][0]["points"]) == 2
     assert trails["cluster"][0]["points"][0] == {
-        "time": (2024, 1),
-        "timeLabel": "2024-01",
-        "x": 0.333333,
-        "y": 0.333333,
-        "count": 3,
-        "std": 0.666667,
+        "time": ms("2024-01-01T00:00:00Z"),
+        "timeLabel": "2024-01-01 00:00 UTC to 2024-01-01 00:59 UTC",
+        "timeStartMs": ms("2024-01-01T00:00:00Z"),
+        "timeEndMs": ms("2024-01-01T00:59:59.999Z"),
+        "x": 1.0,
+        "y": 0.0,
+        "count": 2,
+        "std": 1.0,
     }
