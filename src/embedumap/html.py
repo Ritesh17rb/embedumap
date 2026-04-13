@@ -67,7 +67,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     z-index: 3;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px 16px;
     flex-wrap: wrap;
     padding: 10px 14px;
     background: var(--bg-panel);
@@ -88,6 +88,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     flex-direction: column;
     gap: 2px;
     margin-right: 10px;
+    padding-top: 2px;
   }
 
   #brand-title {
@@ -98,17 +99,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   #brand-subtitle {
-    color: var(--text-faint);
-    font-size: 0.68rem;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.08em;
   }
 
   .label {
-    color: var(--text-faint);
-    font-size: 0.68rem;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
     white-space: nowrap;
   }
 
@@ -116,6 +119,73 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     display: inline-flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .control-section {
+    display: grid;
+    gap: 4px;
+    align-content: center;
+    min-width: 0;
+  }
+
+  .control-section.compact {
+    gap: 3px;
+  }
+
+  #controls-spacer {
+    flex: 1 1 auto;
+    min-width: 16px;
+  }
+
+  #controls-meta {
+    display: contents;
+  }
+
+  #color-select {
+    min-width: 150px;
+    width: 150px;
+  }
+
+  #filters-toggle {
+    min-width: 112px;
+    justify-content: center;
+  }
+
+  #filters-panel {
+    display: none;
+    width: 100%;
+    padding: 10px 12px 12px;
+    border: 1px solid var(--stroke);
+    border-radius: 16px;
+    background: rgba(2, 6, 23, 0.24);
+  }
+
+  #filters-panel.visible {
+    display: block;
+  }
+
+  #filter-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 180px));
+    gap: 8px 10px;
+    width: 100%;
+  }
+
+  .control-field {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .control-field-label {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .button-group button,
@@ -145,6 +215,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     color: #eff6ff;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
     border-color: transparent;
+  }
+
+  #filters-toggle.active {
+    color: #eff6ff;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+    border-color: transparent;
+  }
+
+  select {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   #plot-wrap {
@@ -445,7 +530,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   #status-stack {
-    margin-left: auto;
     display: grid;
     gap: 4px;
     justify-items: end;
@@ -594,10 +678,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     align-items: center;
     gap: 10px;
     flex: 1;
+    flex-wrap: wrap;
     min-width: min(720px, 100%);
   }
 
   #timeline-wrap.visible { display: flex; }
+
+  #timeline-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
 
   .timeline-label {
     color: var(--text-dim);
@@ -611,6 +703,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   #timeline-play.playing {
     background: rgba(239, 68, 68, 0.16);
     border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  #timeline-speed-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #timeline-speed {
+    width: 110px;
+    accent-color: var(--accent);
+  }
+
+  #timeline-speed-value {
+    min-width: 3.5ch;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    text-align: right;
   }
 
   .range-block {
@@ -692,6 +802,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   @media (max-width: 900px) {
+    #controls {
+      align-items: flex-start;
+    }
+
     #status-stack,
     #axis-legend {
       justify-items: start;
@@ -713,6 +827,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       min-width: 100%;
     }
 
+    #controls-spacer {
+      display: none;
+    }
+
+    #controls-meta {
+      width: 100%;
+      display: grid;
+      gap: 10px;
+    }
+
+    #status-stack {
+      width: 100%;
+    }
+
+    #filter-group {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
     .timeline-label {
       min-width: 70px;
       font-size: 0.75rem;
@@ -727,20 +859,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div id="brand-title"></div>
       <div id="brand-subtitle"></div>
     </div>
-    <span class="label">Color</span>
-    <div id="color-group" class="button-group"></div>
-    <span class="label">Filter</span>
-    <div id="filter-group" class="button-group"></div>
+    <div class="control-section compact">
+      <span class="label">Color</span>
+      <select id="color-select" aria-label="Color by"></select>
+    </div>
+    <div class="control-section compact">
+      <span class="label">Filters</span>
+      <button id="filters-toggle" type="button" aria-expanded="false">Filters</button>
+    </div>
     <div id="trails-group" class="button-group" style="display:none">
       <button id="trails-toggle">Trails</button>
     </div>
     <div id="page-switch-group" class="button-group" style="display:none"></div>
-    <div id="status-stack">
-      <div id="summary" class="label"></div>
-      <div id="axis-legend" aria-label="Projection axes">
-        <div class="axis-row"><span class="axis-tag">X</span><span id="axis-x-label" class="axis-text"></span></div>
-        <div class="axis-row"><span class="axis-tag">Y</span><span id="axis-y-label" class="axis-text"></span></div>
+    <div id="controls-spacer"></div>
+    <div id="controls-meta">
+      <div id="status-stack">
+        <div id="summary" class="label"></div>
+        <div id="axis-legend" aria-label="Projection axes">
+          <div class="axis-row"><span class="axis-tag">X</span><span id="axis-x-label" class="axis-text"></span></div>
+          <div class="axis-row"><span class="axis-tag">Y</span><span id="axis-y-label" class="axis-text"></span></div>
+        </div>
       </div>
+    </div>
+    <div id="filters-panel">
+      <div id="filter-group"></div>
     </div>
   </div>
   <div id="plot-wrap">
@@ -760,7 +902,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </div>
   <div id="timeline-bar">
     <div id="timeline-wrap">
-      <button id="timeline-play" type="button">▶ Play</button>
+      <div id="timeline-tools">
+        <button id="timeline-play" type="button">&#9654; Play</button>
+        <span class="label">Playback</span>
+        <div id="timeline-mode-group" class="button-group"></div>
+        <label id="timeline-speed-wrap" for="timeline-speed">
+          <span class="label">Speed</span>
+          <input id="timeline-speed" type="range" min="25" max="400" step="25" value="100">
+          <span id="timeline-speed-value"></span>
+        </label>
+      </div>
       <span id="timeline-start" class="timeline-label"></span>
       <div class="range-block" id="timeline-range">
         <div class="timeline-line"></div>
@@ -805,6 +956,11 @@ const margin = { top: 18, right: 18, bottom: 18, left: 18 };
 const pointRadius = 4;
 const sliderMax = 10000;
 const playDurationMs = 12000;
+const defaultPlaySpeed = 100;
+const PLAYBACK_MODES = [
+  { id: "slide", label: "Slide" },
+  { id: "reveal", label: "Reveal" },
+];
 
 const plot = $("#plot");
 const overlay = d3.select("#overlay");
@@ -887,6 +1043,14 @@ function formatDuration(ms0, ms1) {
   const years = Math.floor(totalMonths / 12);
   const months = totalMonths % 12;
   return months ? `${years}y ${months}m` : `${years}y`;
+}
+
+function formatPlaySpeedValue() {
+  return `${(state.playSpeed / 100).toFixed(2).replace(/\\.?0+$/, "")}x`;
+}
+
+function playbackDurationMs() {
+  return playDurationMs / Math.max(0.25, state.playSpeed / 100);
 }
 
 function sliderToMs(value) {
@@ -1086,7 +1250,7 @@ function showTrailLines() {
 }
 
 function showTrailNodes() {
-  return state.trailMode !== "nodes";
+  return state.trailMode !== "trails";
 }
 
 function showScatterNodes() {
@@ -1094,6 +1258,9 @@ function showScatterNodes() {
 }
 
 function trailPointBounds(point) {
+  if (Number.isFinite(point.timeStartMs) && Number.isFinite(point.timeEndMs)) {
+    return { start: point.timeStartMs, end: point.timeEndMs };
+  }
   if (!DATA.timelineColumn || DATA.timelineMin == null || DATA.timelineMax == null) {
     return { start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY };
   }
@@ -1500,18 +1667,13 @@ function buildBrand() {
 }
 
 function buildColorControls() {
-  const group = $("#color-group");
-  group.innerHTML = DATA.colorColumns.map((column) => (
-    `<button data-color="${escapeHtml(column)}" class="${column === state.colorBy ? "active" : ""}">${escapeHtml(displaySortLabel(column))}</button>`
+  const select = $("#color-select");
+  select.innerHTML = DATA.colorColumns.map((column) => (
+    `<option value="${escapeHtml(column)}"${column === state.colorBy ? " selected" : ""}>${escapeHtml(displaySortLabel(column))}</option>`
   )).join("");
-  group.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-color]");
-    if (!button) return;
-    state.colorBy = button.dataset.color;
+  select.addEventListener("change", (event) => {
+    state.colorBy = event.target.value;
     state.highlightTrailCluster = null;
-    for (const candidate of group.querySelectorAll("button")) {
-      candidate.classList.toggle("active", candidate === button);
-    }
     refreshScene();
   });
 }
@@ -1520,18 +1682,34 @@ function buildFilterControls() {
   const container = $("#filter-group");
   container.innerHTML = DATA.filterColumns.map((column) => {
     const values = [...new Set(DATA.rows.map((row) => String(row.filters[column] ?? "(blank)")))].sort();
-    const options = [`<option value="">All ${escapeHtml(column)}</option>`]
+    const options = [`<option value="">All</option>`]
       .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
       .join("");
-    return `<select data-filter="${escapeHtml(column)}">${options}</select>`;
+    return `<label class="control-field"><span class="control-field-label">${escapeHtml(displaySortLabel(column))}</span><select data-filter="${escapeHtml(column)}">${options}</select></label>`;
   }).join("");
   for (const select of container.querySelectorAll("select")) {
     select.value = state.filters[select.dataset.filter] ?? "";
     select.addEventListener("change", (event) => {
       state.filters[event.target.dataset.filter] = event.target.value;
+      syncFilterToggle();
       refreshScene();
     });
   }
+  $("#filters-toggle").addEventListener("click", () => {
+    state.filtersOpen = !state.filtersOpen;
+    syncFilterToggle();
+  });
+  syncFilterToggle();
+}
+
+function syncFilterToggle() {
+  const activeCount = Object.values(state.filters).filter(Boolean).length;
+  const toggle = $("#filters-toggle");
+  const panel = $("#filters-panel");
+  toggle.textContent = activeCount ? `Filters (${activeCount})` : "Filters";
+  toggle.classList.toggle("active", state.filtersOpen || activeCount > 0);
+  toggle.setAttribute("aria-expanded", state.filtersOpen ? "true" : "false");
+  panel.classList.toggle("visible", state.filtersOpen);
 }
 
 function buildSortControls() {
@@ -1549,14 +1727,14 @@ function buildSortControls() {
 }
 
 function syncControlsFromState() {
-  for (const button of $("#color-group").querySelectorAll("button")) {
-    button.classList.toggle("active", button.dataset.color === state.colorBy);
-  }
+  $("#color-select").value = state.colorBy;
   for (const select of $("#filter-group").querySelectorAll("select")) {
     select.value = state.filters[select.dataset.filter] ?? "";
   }
+  syncFilterToggle();
   syncSortControls();
   syncTimelineUi();
+  syncPlaybackControls();
 }
 
 function syncTimelineUi() {
@@ -1575,6 +1753,15 @@ function syncTimelineUi() {
   $("#timeline-fill").style.width = `${((end - start) / sliderMax) * 100}%`;
 }
 
+function syncPlaybackControls() {
+  const speedInput = $("#timeline-speed");
+  if (speedInput) speedInput.value = String(state.playSpeed);
+  $("#timeline-speed-value").textContent = formatPlaySpeedValue();
+  for (const button of $("#timeline-mode-group").querySelectorAll("button")) {
+    button.classList.toggle("active", button.dataset.playbackMode === state.playbackMode);
+  }
+}
+
 function pausePlay() {
   state.playing = false;
   $("#timeline-play").textContent = "▶ Play";
@@ -1589,8 +1776,10 @@ function stepPlay(timestamp) {
   playPrev = timestamp;
   const windowSize = state.timelineMax - state.timelineMin;
   const fullRange = Math.max(1, DATA.timelineMax - DATA.timelineMin);
-  state.timelineMax = Math.min(DATA.timelineMax, state.timelineMax + (delta * fullRange) / playDurationMs);
-  state.timelineMin = Math.max(DATA.timelineMin, state.timelineMax - windowSize);
+  state.timelineMax = Math.min(DATA.timelineMax, state.timelineMax + (delta * fullRange) / playbackDurationMs());
+  if (state.playbackMode === "slide") {
+    state.timelineMin = Math.max(DATA.timelineMin, state.timelineMax - windowSize);
+  }
   syncTimelineUi();
   refreshScene();
   if (state.timelineMax >= DATA.timelineMax) {
@@ -1608,8 +1797,14 @@ function startPlay() {
     state.timelineMin = DATA.timelineMin;
     state.timelineMax = Math.min(DATA.timelineMax, DATA.timelineMin + windowSize);
   } else if (state.timelineMax >= DATA.timelineMax) {
-    state.timelineMin = DATA.timelineMin;
-    state.timelineMax = Math.min(DATA.timelineMax, DATA.timelineMin + windowSize);
+    if (state.playbackMode === "reveal") {
+      const replayStart = Math.max(DATA.timelineMin, DATA.timelineMax - windowSize);
+      state.timelineMin = Math.min(state.timelineMin, replayStart);
+      state.timelineMax = Math.min(DATA.timelineMax, state.timelineMin + windowSize);
+    } else {
+      state.timelineMin = DATA.timelineMin;
+      state.timelineMax = Math.min(DATA.timelineMax, DATA.timelineMin + windowSize);
+    }
   }
   state.playing = true;
   playPrev = null;
@@ -1625,10 +1820,15 @@ function buildTimelineControls() {
   const minInput = $("#timeline-min");
   const maxInput = $("#timeline-max");
   const timelineFill = $("#timeline-fill");
+  const modeGroup = $("#timeline-mode-group");
+  const speedInput = $("#timeline-speed");
   minInput.min = "0";
   minInput.max = String(sliderMax);
   maxInput.min = "0";
   maxInput.max = String(sliderMax);
+  modeGroup.innerHTML = PLAYBACK_MODES.map((mode) => (
+    `<button type="button" data-playback-mode="${escapeHtml(mode.id)}">${escapeHtml(mode.label)}</button>`
+  )).join("");
 
   minInput.addEventListener("input", () => {
     const next = Math.min(Number(minInput.value), Number(maxInput.value) - 100);
@@ -1690,12 +1890,23 @@ function buildTimelineControls() {
   timelineFill.addEventListener("pointerup", finishRangeDrag);
   timelineFill.addEventListener("pointercancel", finishRangeDrag);
 
+  modeGroup.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-playback-mode]");
+    if (!button) return;
+    state.playbackMode = button.dataset.playbackMode;
+    syncPlaybackControls();
+  });
+  speedInput.addEventListener("input", () => {
+    state.playSpeed = Number(speedInput.value) || defaultPlaySpeed;
+    syncPlaybackControls();
+  });
   $("#timeline-play").addEventListener("click", () => {
     if (state.playing) pausePlay();
     else startPlay();
   });
 
   syncTimelineUi();
+  syncPlaybackControls();
 }
 
 function pointerPosition(event) {
@@ -1944,12 +2155,15 @@ function boot() {
     state = {
       colorBy: DATA.colorColumns[0] ?? "cluster",
       filters: Object.fromEntries(DATA.filterColumns.map((column) => [column, ""])),
+      filtersOpen: false,
       selectedIds: new Set(),
       sortColumn: DATA.defaultSort,
       sortAsc: true,
       timelineMin: DATA.timelineMin,
       timelineMax: DATA.timelineMax,
       playing: false,
+      playbackMode: "slide",
+      playSpeed: defaultPlaySpeed,
       trailMode: "both",
       highlightTrailCluster: null,
     };
