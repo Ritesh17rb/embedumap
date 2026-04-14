@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategy Story — SNHU Research</title>
+<style>
+  :root {
+    --bg: #08111d;
+    --panel: rgba(11, 22, 38, 0.82);
+    --panel-strong: rgba(11, 22, 38, 0.94);
+    --panel-soft: rgba(255, 255, 255, 0.03);
+    --stroke: rgba(148, 163, 184, 0.16);
+    --text: #e8eef7;
+    --muted: #9fb0c8;
+    --faint: #6c819f;
+    --blue: #5fb3ff;
+    --cyan: #27d7d0;
+    --green: #38d39f;
+    --amber: #f8c453;
+    --rose: #fb7185;
+    --shadow: 0 26px 80px rgba(0, 0, 0, 0.4);
+    --radius: 24px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: "IBM Plex Sans", "Inter", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(circle at 14% 14%, rgba(39, 215, 208, 0.12), transparent 24%),
+      radial-gradient(circle at 86% 16%, rgba(95, 179, 255, 0.14), transparent 28%),
+      radial-gradient(circle at 74% 78%, rgba(56, 211, 159, 0.09), transparent 24%),
+      linear-gradient(180deg, #07111d 0%, #0b1524 52%, #07101b 100%);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.07) 1px, transparent 0);
+    background-size: 18px 18px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 92%);
+    opacity: 0.18;
+  }
+
+  .page {
+    position: relative;
+    z-index: 1;
+    width: min(1220px, calc(100% - 28px));
+    margin: 0 auto;
+    padding: 28px 0 56px;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+    color: var(--muted);
+  }
+
+  .back-link,
+  .map-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+    font-size: 0.94rem;
+  }
+
+  .back-link:hover,
+  .map-link:hover { color: var(--text); }
+
+  .hero,
+  .section {
+    border-radius: 28px;
+    border: 1px solid var(--stroke);
+    box-shadow: var(--shadow);
+  }
+
+  .hero {
+    overflow: hidden;
+    background:
+      linear-gradient(135deg, rgba(95, 179, 255, 0.14), transparent 36%),
+      linear-gradient(180deg, rgba(11, 22, 38, 0.96), rgba(11, 22, 38, 0.82));
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.45fr 0.95fr;
+    gap: 24px;
+    padding: 28px;
+  }
+
+  .eyebrow,
+  .section-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(95, 179, 255, 0.22);
+    background: rgba(95, 179, 255, 0.08);
+    color: #cfe7ff;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+    letter-spacing: -0.03em;
+    margin: 0;
+  }
+
+  h1 {
+    margin-top: 16px;
+    font-size: clamp(2.7rem, 4.2vw, 4.7rem);
+    line-height: 0.96;
+  }
+
+  .lead {
+    margin: 18px 0 0;
+    color: var(--muted);
+    font-size: 1.1rem;
+    max-width: 760px;
+  }
+
+  .hero-aside {
+    display: grid;
+    gap: 14px;
+    align-content: start;
+  }
+
+  .aside-card,
+  .quote-card,
+  .metric-card,
+  .bet-card,
+  .visual-card,
+  .lane-card,
+  .white-card,
+  .play-card,
+  .source-card {
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 18px;
+  }
+
+  .quote-card strong {
+    display: block;
+    font-size: 1.05rem;
+    line-height: 1.45;
+  }
+
+  .quote-card span,
+  .aside-card span,
+  .source-card p {
+    color: var(--muted);
+    font-size: 0.94rem;
+  }
+
+  .hero-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    padding: 0 28px 28px;
+  }
+
+  .metric-card .value {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .metric-card .label {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 0.84rem;
+  }
+
+  .section {
+    margin-top: 28px;
+    padding: 24px;
+    background: var(--panel);
+  }
+
+  .section-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .section-head p {
+    margin: 10px 0 0;
+    color: var(--muted);
+    max-width: 820px;
+  }
+
+  .section-head h2 {
+    margin-top: 12px;
+    font-size: clamp(1.5rem, 2.2vw, 2.1rem);
+  }
+
+  .rubric {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .rubric-card {
+    padding: 16px;
+    border-radius: 18px;
+    background: var(--panel-soft);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  .rubric-card strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #d8ebff;
+    font-size: 0.95rem;
+  }
+
+  .rubric-card span {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .bet-grid,
+  .lane-grid,
+  .white-grid,
+  .play-grid,
+  .source-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .bet-card h3,
+  .lane-card h3,
+  .white-card h3,
+  .play-card h3,
+  .visual-card h3,
+  .source-card h3 {
+    font-size: 1.1rem;
+  }
+
+  .bet-card > p,
+  .lane-card > p,
+  .white-card > p,
+  .play-card > p,
+  .visual-card > p {
+    margin: 8px 0 0;
+    color: var(--muted);
+  }
+
+  .bet-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .rank-pill {
+    white-space: nowrap;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(95, 179, 255, 0.12);
+    color: #d7ecff;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .signal-stack {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .signal {
+    display: grid;
+    gap: 6px;
+  }
+
+  .signal-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  .track {
+    height: 9px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    overflow: hidden;
+  }
+
+  .fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
+  }
+
+  .fill.green { background: linear-gradient(90deg, #12b981, #38d39f); }
+  .fill.amber { background: linear-gradient(90deg, #f59e0b, #f8c453); }
+  .fill.rose { background: linear-gradient(90deg, #fb7185, #f43f5e); }
+
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.08);
+    color: #d8e6f5;
+    font-size: 0.8rem;
+  }
+
+  .visual-grid {
+    display: grid;
+    grid-template-columns: 1.08fr 0.92fr;
+    gap: 18px;
+  }
+
+  .matrix {
+    position: relative;
+    margin-top: 14px;
+    aspect-ratio: 1.16 / 0.9;
+    border-radius: 20px;
+    overflow: hidden;
+    background:
+      linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(95, 179, 255, 0.08), rgba(39, 215, 208, 0.02));
+    background-size: 25% 100%, 100% 25%, auto;
+  }
+
+  .matrix::before,
+  .matrix::after {
+    content: "";
+    position: absolute;
+    background: rgba(148, 163, 184, 0.18);
+  }
+
+  .matrix::before {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+  }
+
+  .matrix::after {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+  }
+
+  .quadrant {
+    position: absolute;
+    color: var(--faint);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .quadrant.tl { top: 12px; left: 12px; }
+  .quadrant.tr { top: 12px; right: 12px; }
+  .quadrant.bl { bottom: 12px; left: 12px; }
+  .quadrant.br { bottom: 12px; right: 12px; }
+
+  .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 96px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    padding: 10px;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: #f8fcff;
+    background: radial-gradient(circle at 32% 28%, rgba(255,255,255,0.22), transparent 30%), rgba(95, 179, 255, 0.2);
+    border: 1px solid rgba(95, 179, 255, 0.34);
+  }
+
+  .node.green {
+    background-color: rgba(56, 211, 159, 0.18);
+    border-color: rgba(56, 211, 159, 0.34);
+  }
+
+  .node.amber {
+    background-color: rgba(248, 196, 83, 0.18);
+    border-color: rgba(248, 196, 83, 0.34);
+  }
+
+  .matrix-legend {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .legend-row {
+    display: grid;
+    grid-template-columns: 104px 1fr;
+    gap: 12px;
+  }
+
+  .legend-row strong {
+    color: #d7ecff;
+    font-size: 0.84rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .legend-row span {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .mini-chart {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .mini-row {
+    display: grid;
+    grid-template-columns: 96px 1fr 44px;
+    gap: 10px;
+    align-items: center;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  .mini-row strong {
+    color: #d7ecff;
+    text-align: right;
+  }
+
+  .lane-card .who {
+    margin-top: 14px;
+    color: #d7ecff;
+    font-weight: 700;
+  }
+
+  .lane-card .build {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .white-card .compare {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .compare-row {
+    display: grid;
+    grid-template-columns: 86px 1fr 48px;
+    gap: 10px;
+    align-items: center;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  .play-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .play-card {
+    min-height: 220px;
+  }
+
+  .play-card .num {
+    display: inline-grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, rgba(39, 215, 208, 0.18), rgba(95, 179, 255, 0.22));
+    border: 1px solid rgba(95, 179, 255, 0.2);
+    font-weight: 800;
+  }
+
+  .conclusion {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 18px;
+  }
+
+  .conclusion-box {
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(255,255,255,0.03);
+    padding: 18px;
+  }
+
+  .conclusion-box ul {
+    margin: 14px 0 0;
+    padding-left: 18px;
+    color: var(--muted);
+  }
+
+  .conclusion-box li { margin-bottom: 8px; }
+
+  .source-card h3 { margin-bottom: 10px; }
+
+  .footer {
+    margin-top: 28px;
+    padding-top: 18px;
+    color: var(--faint);
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    font-size: 0.88rem;
+    text-align: center;
+  }
+
+  @media (max-width: 1080px) {
+    .hero-grid,
+    .visual-grid,
+    .conclusion,
+    .rubric,
+    .bet-grid,
+    .lane-grid,
+    .white-grid,
+    .play-grid,
+    .source-grid,
+    .hero-metrics {
+      grid-template-columns: 1fr;
+    }
+
+    .section-head,
+    .topbar {
+      display: grid;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .page { width: min(100% - 20px, 1220px); }
+    .hero-grid,
+    .hero-metrics,
+    .section { padding: 18px; }
+    .hero-grid { padding: 18px; }
+    .hero-metrics { padding: 0 18px 18px; }
+    h1 { font-size: 2.3rem; }
+    .legend-row,
+    .mini-row,
+    .compare-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <a href="index.html" class="back-link">&larr; Back to SNHU Research</a>
+      <a href="map.html" class="map-link">Open the live map &rarr;</a>
+    </div>
+
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">Strategy Story · SNHU vs OpenAlex</div>
+          <h1>Where SNHU can matter next.</h1>
+          <p class="lead">
+            This page is meant to answer the meeting brief directly: not just what SNHU has published,
+            but where it should concentrate next if the goal is stronger research reputation. The right
+            move is not “do more of everything.” It is to invest where SNHU is underweight, already
+            adjacent, and increasingly legible in the global map.
+          </p>
+        </div>
+        <div class="hero-aside">
+          <div class="quote-card">
+            <div class="section-tag">Short answer</div>
+            <strong>Do not chase the emptiest parts of the map. Own the thin edges already touching SNHU.</strong>
+            <span>That is where the most credible growth platforms appear: close enough to build, thin enough to matter, visible enough to improve reputation.</span>
+          </div>
+          <div class="aside-card">
+            <div class="section-tag">Reading logic</div>
+            <span>Each recommendation is based on four things: how underweight SNHU is versus the wider universe, how quickly the area is growing, how much citation signal it already shows, and how close it sits to SNHU's current embedding footprint.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-metrics">
+        <div class="metric-card"><div class="value">3,332</div><div class="label">OpenAlex papers on map</div></div>
+        <div class="metric-card"><div class="value">832</div><div class="label">SNHU papers analyzed</div></div>
+        <div class="metric-card"><div class="value">3</div><div class="label">Primary growth bets</div></div>
+        <div class="metric-card"><div class="value">5.35</div><div class="label">Average citations per SNHU paper</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Decision Rubric</div>
+          <h2>What counts as a good bet here.</h2>
+          <p>The point of this page is strategic prioritization. These are the filters that matter most if the goal is reputational lift rather than generic output growth.</p>
+        </div>
+      </div>
+
+      <div class="rubric">
+        <div class="rubric-card"><strong>Underweight gap</strong><span>SNHU should care about areas where the global literature is larger than its own footprint, but not so distant that the effort becomes a cold start.</span></div>
+        <div class="rubric-card"><strong>Recent growth</strong><span>Rapidly accelerating fields matter because they shape perception of where a university is heading, not just where it has been.</span></div>
+        <div class="rubric-card"><strong>Citation proof</strong><span>The strongest bets are not just novel. They already show evidence that papers in the zone can travel and accumulate attention.</span></div>
+        <div class="rubric-card"><strong>Adjacency</strong><span>The best strategic moves sit near current strengths in the embedding map, so they can be built by extending existing conversations.</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Act I · Hinge Points</div>
+          <h2>The portfolio should tilt toward three bets.</h2>
+          <p>These are the bets that best satisfy the meeting intent: plausible future research opportunities that can increase visibility because they are both adjacent and underdeveloped.</p>
+        </div>
+      </div>
+
+      <div class="bet-grid">
+        <article class="bet-card">
+          <div class="bet-head">
+            <div>
+              <h3>Neuroscience &amp; Theoretical Consciousness</h3>
+              <p>SNHU's highest-upside frontier because the field is growing fast, moving far, and consolidating around a visible conceptual identity.</p>
+            </div>
+            <div class="rank-pill">Top bet</div>
+          </div>
+          <div class="signal-stack">
+            <div class="signal">
+              <div class="signal-meta"><span>OpenAlex gap</span><strong>+13.4%</strong></div>
+              <div class="track"><div class="fill" style="width: 88%"></div></div>
+            </div>
+            <div class="signal">
+              <div class="signal-meta"><span>Recent growth</span><strong>+1300%</strong></div>
+              <div class="track"><div class="fill green" style="width: 100%"></div></div>
+            </div>
+            <div class="signal">
+              <div class="signal-meta"><span>Centroid movement</span><strong>10.67 map units</strong></div>
+              <div class="track"><div class="fill amber" style="width: 96%"></div></div>
+            </div>
+          </div>
+          <div class="tag-row">
+            <span class="tag">Theoretical Consciousness Frameworks</span>
+            <span class="tag">Computational neuroscience</span>
+            <span class="tag">Cognition and AI</span>
+          </div>
+        </article>
+
+        <article class="bet-card">
+          <div class="bet-head">
+            <div>
+              <h3>Computer Science: AI, Cybersecurity &amp; Automation</h3>
+              <p>This is the platform bet. It powers multiple stories at once: intelligent systems, digital learning, human-computer interaction, and applied AI.</p>
+            </div>
+            <div class="rank-pill">Platform</div>
+          </div>
+          <div class="signal-stack">
+            <div class="signal">
+              <div class="signal-meta"><span>OpenAlex gap</span><strong>+6.1%</strong></div>
+              <div class="track"><div class="fill" style="width: 58%"></div></div>
+            </div>
+            <div class="signal">
+              <div class="signal-meta"><span>Recent growth</span><strong>+450%</strong></div>
+              <div class="track"><div class="fill green" style="width: 82%"></div></div>
+            </div>
+            <div class="signal">
+              <div class="signal-meta"><span>Current cluster base</span><strong>209 papers</strong></div>
+              <div class="track"><div class="fill amber" style="width: 88%"></div></div>
+            </div>
+          </div>
+          <div class="tag-row">
+            <span class="tag">AI, Cybersecurity, and Automation</span>
+            <span class="tag">Human-centered robotics</span>
+            <span class="tag">Machine perception</span>
+          </div>
+        </article>
+
+        <article class="bet-card">
+          <div class="bet-head">
+            <div>
+              <h3>Business with Digital Strategy &amp; Innovation</h3>
+              <p>This is the translation bet: where technical capability becomes enterprise relevance, digital adoption, and executive-facing impact.</p>
+            </div>
+            <div class="rank-pill">Translator</div>
+          </div>
+          <div class="signal-stack">
+            <div class="signal">
+              <div class="signal-meta"><span>OpenAlex gap</span><strong>+10.3%</strong></div>
+              <div class="track"><div class="fill" style="width: 76%"></div></div>
+            </div>
+            <div class="signal">
+              <div class="signal-meta"><span>Recent growth</span><strong>+10%</strong></div>
+              <div class="track"><div class="fill green" style="width: 36%"></div></div>
+            </div>
+            <div class="signal">
+              <div class="signal-meta"><span>Top citation signal</span><strong>216 cites</strong></div>
+              <div class="track"><div class="fill amber" style="width: 92%"></div></div>
+            </div>
+          </div>
+          <div class="tag-row">
+            <span class="tag">Corporate Performance and Innovation</span>
+            <span class="tag">Digital transformation</span>
+            <span class="tag">Service adoption and trust</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Act II · Why These Bets Win</div>
+          <h2>The best opportunities are adjacent, not random.</h2>
+          <p>This is the key design logic Anand's page communicates well: good strategy stories do not merely list “interesting topics.” They show why those topics are plausibly reachable from where the institution already sits.</p>
+        </div>
+      </div>
+
+      <div class="visual-grid">
+        <article class="visual-card">
+          <h3>Opportunity matrix</h3>
+          <p>Positioned by practical adjacency to SNHU's current map footprint and expected reputation upside if developed further.</p>
+          <div class="matrix">
+            <div class="quadrant tl">High upside / farther</div>
+            <div class="quadrant tr">High upside / adjacent</div>
+            <div class="quadrant bl">Lower upside / farther</div>
+            <div class="quadrant br">Lower upside / adjacent</div>
+            <div class="node" style="left: 73%; top: 28%;">Neuro +<br>cognition</div>
+            <div class="node green" style="left: 67%; top: 43%;">AI + cyber</div>
+            <div class="node amber" style="left: 63%; top: 61%;">Business +<br>digital</div>
+            <div class="node" style="left: 80%; top: 52%;">Deep<br>learning</div>
+            <div class="node green" style="left: 46%; top: 71%;">Qualitative<br>methods</div>
+          </div>
+        </article>
+
+        <article class="visual-card">
+          <h3>How to read the matrix</h3>
+          <div class="matrix-legend">
+            <div class="legend-row">
+              <strong>Neuro + cognition</strong>
+              <span>The most important reputational bet because it combines extreme growth, strong movement, and a conceptually distinct center of gravity.</span>
+            </div>
+            <div class="legend-row">
+              <strong>AI + cyber</strong>
+              <span>The enabling platform. It is what lets multiple SNHU stories reinforce one another instead of becoming isolated projects.</span>
+            </div>
+            <div class="legend-row">
+              <strong>Business + digital</strong>
+              <span>The translation layer that turns technical capability into enterprise-facing relevance and broader institutional legibility.</span>
+            </div>
+            <div class="legend-row">
+              <strong>Deep learning</strong>
+              <span>The best near-neighbor white space because it is globally active and sits close to current AI-heavy work.</span>
+            </div>
+          </div>
+
+          <div class="mini-chart">
+            <div class="mini-row"><span>Adjacency</span><div class="track"><div class="fill" style="width: 90%"></div></div><strong>High</strong></div>
+            <div class="mini-row"><span>Growth</span><div class="track"><div class="fill green" style="width: 84%"></div></div><strong>High</strong></div>
+            <div class="mini-row"><span>Citation proof</span><div class="track"><div class="fill amber" style="width: 76%"></div></div><strong>Strong</strong></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Act III · Collaboration Inside SNHU</div>
+          <h2>The internal leverage is cross-disciplinary, not just more of the same.</h2>
+          <p>The right collaborations are short-distance handshakes between existing strengths. They serve the meeting goal because they create realistic pathways to the next wave of publishable work.</p>
+        </div>
+      </div>
+
+      <div class="lane-grid">
+        <article class="lane-card">
+          <h3>AI, Cognition &amp; Digital Well-being</h3>
+          <p>Use the neuroscience-psychology-computer science overlap to build an identifiable center around cognition, AI, and human experience.</p>
+          <div class="who">Schoff · Lewis · Ellington</div>
+          <div class="tag-row">
+            <span class="tag">Neuroscience</span>
+            <span class="tag">Psychology</span>
+            <span class="tag">Computer Science</span>
+            <span class="tag">Health Professions</span>
+          </div>
+          <div class="build">What they could build next: a visible neuro-AI program spanning cognition, adaptive interfaces, and digital mental-health tools.</div>
+        </article>
+
+        <article class="lane-card">
+          <h3>Sustainable Enterprise &amp; Digital Operations</h3>
+          <p>Connect business, engineering, and environmental research so SNHU can tell a stronger story about systems, operations, and external relevance.</p>
+          <div class="who">Yazdanifard · Sadraey · Dhakar</div>
+          <div class="tag-row">
+            <span class="tag">Business</span>
+            <span class="tag">Engineering</span>
+            <span class="tag">Environmental Science</span>
+            <span class="tag">Economics</span>
+          </div>
+          <div class="build">What they could build next: an applied lab around AI-supported supply chains, sustainability decisions, and resilient operations.</div>
+        </article>
+
+        <article class="lane-card">
+          <h3>AI for Learning Innovation</h3>
+          <p>SNHU's biggest institutional asset is online and adult education. The strategic move is to turn that from a brand identity into a research platform.</p>
+          <div class="who">Cross-campus learning, psychology, and AI teams</div>
+          <div class="tag-row">
+            <span class="tag">Online and Adult Education</span>
+            <span class="tag">Psychology</span>
+            <span class="tag">Social Sciences</span>
+            <span class="tag">AI systems</span>
+          </div>
+          <div class="build">What they could build next: a hub for personalized learning, tutoring systems, intelligent feedback, and evidence-rich digital pedagogy.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Act IV · White Space</div>
+          <h2>The best white space is a thin edge, not a lonely desert.</h2>
+          <p>These are the gaps most worth acting on because they extend the current map rather than requiring a full institutional reinvention.</p>
+        </div>
+      </div>
+
+      <div class="white-grid">
+        <article class="white-card">
+          <h3>Deep Learning &amp; Computer Vision</h3>
+          <p>The strongest technical adjacency gap. It is close enough to current AI activity to be believable, but thin enough to create visible differentiation if expanded.</p>
+          <div class="compare">
+            <div class="compare-row"><span>SNHU</span><div class="track"><div class="fill" style="width: 3%"></div></div><strong>6</strong></div>
+            <div class="compare-row"><span>Universe</span><div class="track"><div class="fill green" style="width: 98%"></div></div><strong>196</strong></div>
+            <div class="compare-row"><span>Proximity</span><div class="track"><div class="fill amber" style="width: 90%"></div></div><strong>0.90</strong></div>
+          </div>
+        </article>
+
+        <article class="white-card">
+          <h3>Qualitative Research Methodologies</h3>
+          <p>Not a topical headline, but a real leverage point. Better methods support stronger work across social sciences, psychology, education, and business.</p>
+          <div class="compare">
+            <div class="compare-row"><span>SNHU</span><div class="track"><div class="fill" style="width: 2%"></div></div><strong>5</strong></div>
+            <div class="compare-row"><span>Universe</span><div class="track"><div class="fill green" style="width: 100%"></div></div><strong>342</strong></div>
+            <div class="compare-row"><span>Proximity</span><div class="track"><div class="fill amber" style="width: 72%"></div></div><strong>1.44</strong></div>
+          </div>
+        </article>
+
+        <article class="white-card">
+          <h3>What makes these better than pure novelty</h3>
+          <p>They are actionable because they improve both the map position and the institution's story about itself.</p>
+          <div class="tag-row">
+            <span class="tag">Close to current strengths</span>
+            <span class="tag">Legible externally</span>
+            <span class="tag">Recruitable</span>
+            <span class="tag">Compounding over time</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Act V · Reputation Flywheel</div>
+          <h2>Research quality compounds when infrastructure becomes visible.</h2>
+          <p>The strategy story should not end with topic bets. It should show how those bets become a repeatable institutional advantage.</p>
+        </div>
+      </div>
+
+      <div class="visual-grid">
+        <article class="visual-card">
+          <h3>Four-step flywheel</h3>
+          <div class="mini-chart">
+            <div class="mini-row"><span>1. Challenge focus</span><div class="track"><div class="fill" style="width: 100%"></div></div><strong>Start</strong></div>
+            <div class="mini-row"><span>2. Shared methods</span><div class="track"><div class="fill green" style="width: 100%"></div></div><strong>Build</strong></div>
+            <div class="mini-row"><span>3. Reusable outputs</span><div class="track"><div class="fill amber" style="width: 100%"></div></div><strong>Scale</strong></div>
+            <div class="mini-row"><span>4. Reputation gains</span><div class="track"><div class="fill rose" style="width: 100%"></div></div><strong>Compound</strong></div>
+          </div>
+        </article>
+
+        <article class="visual-card">
+          <h3>What SNHU should institutionalize</h3>
+          <div class="tag-row">
+            <span class="tag">Seed grants around hinge points</span>
+            <span class="tag">Shared AI and methods support</span>
+            <span class="tag">Open and reproducible workflows</span>
+            <span class="tag">Publication and grant mentorship</span>
+            <span class="tag">Visible research software support</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Act VI · The Playbook</div>
+          <h2>If SNHU only does five things, these are the five.</h2>
+          <p>This is the executive version of the page: the shortest actionable reading of the whole analysis.</p>
+        </div>
+      </div>
+
+      <div class="play-grid">
+        <article class="play-card"><div class="num">1</div><h3>Build an AI &amp; Cognition research spine.</h3><p>Turn the neuroscience-computer science convergence into a named institutional platform, not just a scattered topic cluster.</p></article>
+        <article class="play-card"><div class="num">2</div><h3>Use AI as a shared capability.</h3><p>Connect it to business, education, and health-adjacent work so the strongest technical capacity reinforces multiple reputational stories.</p></article>
+        <article class="play-card"><div class="num">3</div><h3>Recruit into deep learning and computer vision.</h3><p>That is the clearest near-neighbor expansion zone in the current map and the cleanest technical white-space move.</p></article>
+        <article class="play-card"><div class="num">4</div><h3>Turn online learning into a research edge.</h3><p>SNHU already owns the institutional legitimacy here; the next step is to make it a stronger scholarly differentiator.</p></article>
+        <article class="play-card"><div class="num">5</div><h3>Raise methods quality across the portfolio.</h3><p>Better qualitative and quantitative infrastructure will improve the visibility and durability of work in every adjacent growth area.</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Conclusion</div>
+          <h2>The strategy is to become sharper, not larger.</h2>
+          <p>The meeting brief is about identifying research opportunities that can improve reputation. The map suggests SNHU should avoid broad generic expansion and instead become more cumulative in a few zones where it already has momentum.</p>
+        </div>
+      </div>
+
+      <div class="conclusion">
+        <div class="conclusion-box">
+          <h3>What the map says to do now</h3>
+          <ul>
+            <li>Make cognition and AI the flagship story because it combines growth, movement, and conceptual distinctiveness.</li>
+            <li>Use computer science as a platform capability rather than a standalone silo.</li>
+            <li>Treat business and online learning as translation layers that make technical work more visible and institutionally legible.</li>
+          </ul>
+        </div>
+        <div class="conclusion-box">
+          <h3>What not to do</h3>
+          <ul>
+            <li>Do not optimize for the emptiest part of the map.</li>
+            <li>Do not launch unrelated mini-themes with no adjacency to the current portfolio.</li>
+            <li>Do not treat research quality infrastructure as invisible overhead; it is part of the strategic advantage.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">Sources &amp; Limits</div>
+          <h2>What shaped this strategy page.</h2>
+          <p>This page is designed to be used alongside the SNHU embed. It is a decision layer on top of the map, not a replacement for the underlying data exploration.</p>
+        </div>
+      </div>
+
+      <div class="source-grid">
+        <article class="source-card"><h3>Map evidence</h3><p>SNHU papers are positioned against a larger OpenAlex universe so the strategy can separate local strength from global saturation.</p></article>
+        <article class="source-card"><h3>Comparative logic</h3><p>Recommendations emphasize underweight gaps, recent growth, citation signal, and semantic adjacency rather than generic prominence alone.</p></article>
+        <article class="source-card"><h3>Limitation</h3><p>The page is interpretive by design. It is strongest when read as a prioritization tool, then checked against the live map and underlying paper lists.</p></article>
+      </div>
+    </section>
+
+    <div class="footer">Generated with embedumap &amp; Gemini · redesigned as an executive strategy story</div>
+  </div>
+</body>
+</html>
